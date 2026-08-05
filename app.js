@@ -52,6 +52,7 @@ function localFeatureStyle(feature) {
     };
     return styles[symbolType];
   }
+  if (type === "text" && feature.get("bubble")) return bubbleStyle(feature);
   if (type === "text" || type === "location") return new ol.style.Style({ image: new ol.style.Circle({ radius: 9, fill: new ol.style.Fill({ color: type === "location" ? "#2877d5" : "#dc6f45" }), stroke: new ol.style.Stroke({ color: "#fff", width: 2 }) }), text: new ol.style.Text({ text: feature.get("title") || "Notat", offsetY: -19, font: "700 13px system-ui", fill: new ol.style.Fill({ color: "#17302a" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }) }) });
   if (type === "track") return new ol.style.Style({ stroke: new ol.style.Stroke({ color: "#2877d5", width: 5, lineCap: "round", lineJoin: "round" }), image: new ol.style.Circle({ radius: 5, fill: new ol.style.Fill({ color: "#2877d5" }), stroke: new ol.style.Stroke({ color: "#fff", width: 2 }) }) });
   if (type === "photo") return new ol.style.Style({ image: new ol.style.RegularShape({ points: 4, radius: 12, angle: Math.PI / 4, fill: new ol.style.Fill({ color: "#1e4d3a" }), stroke: new ol.style.Stroke({ color: "#fff", width: 2 }) }), text: new ol.style.Text({ text: "Bilde", offsetY: -21, font: "700 12px system-ui", fill: new ol.style.Fill({ color: "#17302a" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }) }) });
@@ -97,8 +98,12 @@ $("delete-object").addEventListener("click", async () => { if (!selectedFeature)
 $("close-detail").addEventListener("click", hideDetail);
 document.querySelectorAll("[data-draw]").forEach((button) => button.addEventListener("click", () => activateDraw(button.dataset.draw)));
 $("cancel-tool").addEventListener("click", () => { deactivateTool(); toast("Aktivt verktøy er avsluttet."); });
-$("place-text").addEventListener("click", () => selectPlacement("text"));
+$("place-text").addEventListener("click", activateTextBubble);
 $("symbol-toggle").addEventListener("click", () => { const open = $("symbol-content").hidden; $("symbol-content").hidden = !open; $("symbol-toggle").setAttribute("aria-expanded", String(open)); });
+function toggleToolContent(toggleId, contentId) { $(toggleId).addEventListener("click", () => { const open = $(contentId).hidden; $(contentId).hidden = !open; $(toggleId).setAttribute("aria-expanded", String(open)); }); }
+toggleToolContent("text-toggle", "text-content");
+toggleToolContent("position-toggle", "position-content");
+toggleToolContent("track-toggle", "track-content");
 $("place-symbol").addEventListener("click", () => { pendingSymbol = { type: $("symbol-type").value, text: $("symbol-text").value.trim() }; selectPlacement("symbol"); });
 $("save-symbol").addEventListener("click", () => { if (!selectedFeature || selectedFeature.get("noteType") !== "symbol") return; const symbolType = $("edit-symbol-type").value; const text = $("edit-symbol-text").value.trim(); selectedFeature.setProperties({ symbolType, symbolText: text, title: symbolNames[symbolType], body: text || "Kartfestet symbol" }); saveData(); showDetail(selectedFeature); notesSource.changed(); toast("Symbolinformasjonen er oppdatert."); });
 $("save-text-note").addEventListener("click", () => { if (!selectedFeature || selectedFeature.get("noteType") !== "text") return; const title = $("edit-note-title").value.trim(); const body = $("edit-note-text").value.trim(); if (!title && !body) { toast("Tekstnotatet kan ikke være tomt."); return; } selectedFeature.setProperties({ title: title || "Notat", body }); saveData(); showDetail(selectedFeature); notesSource.changed(); toast("Tekstnotatet er oppdatert."); });
@@ -223,4 +228,63 @@ $("save-text-note").addEventListener("click", () => {
   const title = $("edit-note-title").value.trim(); const body = $("edit-note-text").value.trim();
   if (!title && !body) { toast("Notatet kan ikke være tomt."); return; }
   selectedFeature.setProperties({ title: title || "Lagret posisjon", body }); saveData(); showDetail(selectedFeature); notesSource.changed(); toast("Posisjonsnotatet er oppdatert.");
+});
+
+function wrapBubbleText(text, widthPixels) {
+  const maxChars = Math.max(12, Math.floor(widthPixels / 7));
+  return text.split("\n").flatMap((paragraph) => {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (!words.length) return [""];
+    const lines = []; let line = "";
+    words.forEach((word) => { const next = line ? `${line} ${word}` : word; if (next.length > maxChars && line) { lines.push(line); line = word; } else line = next; });
+    if (line) lines.push(line); return lines;
+  }).join("\n");
+}
+function bubbleRawText(feature) { return [feature.get("title") || "Notat", feature.get("body") || ""].filter(Boolean).join("\n"); }
+function bubbleLayout(anchor, end, requiredHeightPixels = 0) {
+  const resolution = map.getView().getResolution();
+  const dx = end[0] - anchor[0]; const dy = end[1] - anchor[1];
+  const directionX = Math.sign(dx) || 1; const directionY = Math.sign(dy) || -1;
+  const startX = anchor[0] + dx * 0.2; const startY = anchor[1] + dy * 0.2;
+  const width = Math.max(Math.abs(dx * 0.8), 140 * resolution);
+  const height = Math.max(Math.abs(dy * 0.8), 62 * resolution, requiredHeightPixels * resolution);
+  const endX = startX + directionX * width; const endY = startY + directionY * height;
+  const minX = Math.min(startX, endX); const maxX = Math.max(startX, endX); const minY = Math.min(startY, endY); const maxY = Math.max(startY, endY);
+  return { ring: [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY], [minX, minY]], tail: [anchor, [startX, startY]] };
+}
+function bubbleWidthPixels(feature) { const extent = feature.getGeometry().getExtent(); return Math.max(140, Math.abs(extent[2] - extent[0]) / map.getView().getResolution()); }
+function fitBubbleToText(feature) {
+  const anchor = feature.get("bubbleAnchor"); const end = feature.get("bubbleEnd");
+  if (!anchor || !end) return;
+  const initial = bubbleLayout(anchor, end); const width = Math.abs(initial.ring[1][0] - initial.ring[0][0]) / map.getView().getResolution();
+  const lines = wrapBubbleText(bubbleRawText(feature), width).split("\n").length;
+  const layout = bubbleLayout(anchor, end, 30 + lines * 18);
+  feature.getGeometry().setCoordinates([layout.ring]);
+}
+function bubbleStyle(feature) {
+  const width = bubbleWidthPixels(feature);
+  const anchor = feature.get("bubbleAnchor"); const end = feature.get("bubbleEnd");
+  const tail = anchor && end ? bubbleLayout(anchor, end).tail : null;
+  const styles = [new ol.style.Style({ fill: new ol.style.Fill({ color: "rgba(255,255,253,.96)" }), stroke: new ol.style.Stroke({ color: "#dc6f45", width: 3, lineJoin: "round" }), text: new ol.style.Text({ text: wrapBubbleText(bubbleRawText(feature), width - 24), font: "700 14px system-ui", textAlign: "center", textBaseline: "middle", fill: new ol.style.Fill({ color: "#17302a" }), padding: [10, 12, 10, 12] }) })];
+  if (tail) styles.push(new ol.style.Style({ geometry: new ol.geom.LineString(tail), stroke: new ol.style.Stroke({ color: "#dc6f45", width: 3, lineCap: "round" }), image: new ol.style.Circle({ radius: 4, fill: new ol.style.Fill({ color: "#dc6f45" }), stroke: new ol.style.Stroke({ color: "#fff", width: 2 }) }) }));
+  return styles;
+}
+function activateTextBubble() {
+  const title = $("note-title").value.trim(); const body = $("note-text").value.trim();
+  if (!title && !body) { toast("Skriv tekst før du tegner tekstboksen."); return; }
+  deactivateTool(); toolMode = "text-bubble"; $("map").style.cursor = "crosshair";
+  let anchor; let end;
+  drawInteraction = new ol.interaction.Draw({ source: notesSource, type: "Circle", geometryFunction: (coordinates, geometry) => {
+    anchor = coordinates[0]; end = coordinates[1] || coordinates[0]; const layout = bubbleLayout(anchor, end);
+    if (!geometry) geometry = new ol.geom.Polygon([layout.ring]); else geometry.setCoordinates([layout.ring]); return geometry;
+  } });
+  drawInteraction.on("drawend", (event) => {
+    event.feature.setProperties({ id: uid(), noteType: "text", bubble: true, bubbleAnchor: anchor, bubbleEnd: end, title: title || "Notat", body, createdAt: new Date().toISOString() });
+    fitBubbleToText(event.feature); $("note-title").value = ""; $("note-text").value = ""; saveData(); deactivateTool(); toast("Tekstboksen er lagret. Trykk på den for å redigere teksten.");
+  });
+  map.addInteraction(drawInteraction); toast("Hold inne ved festepunktet og dra ut snakkeboblen.");
+}
+$("save-text-note").addEventListener("click", () => {
+  if (!selectedFeature || selectedFeature.get("noteType") !== "text" || !selectedFeature.get("bubble")) return;
+  fitBubbleToText(selectedFeature); saveData(); notesSource.changed();
 });

@@ -11,12 +11,12 @@
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="icon.svg" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.9.0/ol.css" />
-    <link rel="stylesheet" href="styles.css?v=8" />
+    <link rel="stylesheet" href="styles.css?v=9" />
     <script src="https://cdn.jsdelivr.net/npm/ol@10.9.0/dist/ol.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js" defer></script>
     <script src="https://unpkg.com/shpjs@6.2.0/dist/shp.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-    <script src="app.js?v=10" defer></script>
+    <script src="app.js?v=12" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -46,20 +46,31 @@
             <button data-draw="freehand">Frihånd</button><button data-draw="LineString">Linje</button><button data-draw="Polygon">Område</button>
           </div>
           <hr>
-          <label for="note-title">Tekstboks</label>
-          <input id="note-title" type="text" placeholder="Overskrift (valgfritt)">
-          <textarea id="note-text" rows="3" placeholder="Skriv notat …"></textarea>
-          <button id="place-text" class="primary wide">Plasser tekst i kartet</button>
+          <button id="text-toggle" class="secondary wide" type="button" aria-expanded="false" aria-controls="text-content">Tekstboks</button>
+          <div id="text-content" class="tool-content" hidden>
+            <label for="note-title">Overskrift</label>
+            <input id="note-title" type="text" placeholder="Overskrift (valgfritt)">
+            <label for="note-text">Tekst</label>
+            <textarea id="note-text" rows="3" placeholder="Skriv notat …"></textarea>
+            <button id="place-text" class="primary wide">Tegn tekstboks i kartet</button>
+          </div>
           <hr>
-          <label for="position-title">Lagre posisjon</label>
-          <input id="position-title" type="text" placeholder="Overskrift (valgfritt)">
-          <textarea id="position-text" rows="2" placeholder="Notat til denne posisjonen …"></textarea>
-          <button id="save-position" class="primary wide" type="button">Lagre min posisjon</button>
+          <button id="position-toggle" class="secondary wide" type="button" aria-expanded="false" aria-controls="position-content">Lagre posisjon</button>
+          <div id="position-content" class="tool-content" hidden>
+            <label for="position-title">Overskrift</label>
+            <input id="position-title" type="text" placeholder="Overskrift (valgfritt)">
+            <label for="position-text">Notat</label>
+            <textarea id="position-text" rows="2" placeholder="Notat til denne posisjonen …"></textarea>
+            <button id="save-position" class="primary wide" type="button">Lagre min posisjon</button>
+          </div>
           <hr>
-          <label>Sporlogg <small>Maks 10 km</small></label>
-          <button id="start-track" class="primary wide" type="button">Start sporlogg</button>
-          <button id="stop-track" class="secondary wide" type="button" disabled>Stopp og lagre spor</button>
-          <p id="track-status" class="hint">Ingen aktiv sporlogg.</p>
+          <button id="track-toggle" class="secondary wide" type="button" aria-expanded="false" aria-controls="track-content">Sporlogg</button>
+          <div id="track-content" class="tool-content" hidden>
+            <p class="hint">Maks lengde: 10 km.</p>
+            <button id="start-track" class="primary wide" type="button">Start sporlogg</button>
+            <button id="stop-track" class="secondary wide" type="button" disabled>Stopp og lagre spor</button>
+            <p id="track-status" class="hint">Ingen aktiv sporlogg.</p>
+          </div>
           <hr>
           <button id="symbol-toggle" class="secondary wide" type="button" aria-expanded="false" aria-controls="symbol-content">Symboler</button>
           <div id="symbol-content" class="symbol-content" hidden>
