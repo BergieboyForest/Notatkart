@@ -11,18 +11,18 @@
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="icon.svg" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.9.0/ol.css" />
-    <link rel="stylesheet" href="styles.css?v=9" />
+    <link rel="stylesheet" href="styles.css?v=14" />
     <script src="https://cdn.jsdelivr.net/npm/ol@10.9.0/dist/ol.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js" defer></script>
     <script src="https://unpkg.com/shpjs@6.2.0/dist/shp.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-    <script src="app.js?v=12" defer></script>
+    <script src="app.js?v=45" defer></script>
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
         <div class="brand"><span class="brand-mark">⌖</span><div><p>BEFARING</p><h1>Notatkart</h1></div></div>
-        <div class="top-actions"><button id="locate-button" class="secondary">Min posisjon</button><button id="export-button" class="primary">Eksporter JPEG</button></div>
+        <div class="top-actions"><label class="project-picker" for="project-select">Prosjekt<select id="project-select" aria-label="Aktivt prosjekt"></select></label><input id="project-name" type="text" aria-label="Prosjektnavn" placeholder="Prosjektnavn"><button id="new-project" class="secondary" type="button">Nytt prosjekt</button><button id="locate-button" class="secondary">Min posisjon</button><button id="export-button" class="primary">Eksporter JPEG (UTM 32)</button></div>
       </header>
       <section class="map-area">
         <div id="map" aria-label="Kart"></div>
@@ -31,20 +31,26 @@
           <label class="toggle"><input id="base-toggle" type="checkbox" checked><span>Grunnkart <small>Kartverket</small></span></label>
           <label class="toggle"><input id="losmasser-toggle" type="checkbox"><span>Løsmassekart <small>NGU · sammenstilt visning</small></span></label>
           <label class="toggle"><input id="marin-leire-toggle" type="checkbox"><span>Mulighet for marin leire <small>NGU · overordnet aktsomhetsinformasjon</small></span></label>
+          <label class="toggle"><input id="skogbruksplan-toggle" type="checkbox"><span>Hogstklasser <small>NIBIO · klasse 1–5</small></span></label>
+          <label class="toggle"><input id="nokkelbiotoper-toggle" type="checkbox"><span>Nøkkelbiotoper <small>NIBIO · MiS</small></span></label>
+          <label class="toggle"><input id="kulturminner-toggle" type="checkbox"><span>Kulturminner <small>Riksantikvaren</small></span></label>
+          <label class="toggle"><input id="artskart-toggle" type="checkbox"><span>Artskart <small>Artsdata · arter i skog</small></span></label>
           <div class="layer-heading"><label class="toggle"><input id="import-toggle" type="checkbox" checked><span>Importerte data <small id="import-count">0 objekt</small></span></label><button id="import-expand" class="layer-expand" type="button" aria-label="Vis importerte data" aria-expanded="false">⌄</button></div>
           <div id="import-list" class="layer-submenu" hidden></div>
           <div class="layer-heading"><label class="toggle"><input id="notes-toggle" type="checkbox" checked><span>Notater og skisser <small id="note-count">0 objekt</small></span></label><button id="notes-expand" class="layer-expand" type="button" aria-label="Vis notater og skisser" aria-expanded="false">⌄</button></div>
           <div id="notes-list" class="layer-submenu" hidden></div>
           <hr>
-          <label class="file-button" for="shape-input">Importer kartdata (ZIP)</label>
-          <input id="shape-input" type="file" accept=".zip,application/zip" multiple hidden>
-          <p class="hint">Støtter shapefil-ZIP og Avenza-kartpakker med JPEG, JGW og PRJ. Du kan velge flere filer samtidig.</p>
+          <label class="file-button" for="shape-input">Importer kartdata</label>
+          <input id="shape-input" type="file" accept=".zip,.dxf,.xml,application/zip,application/xml,text/xml" multiple hidden>
+          <p class="hint">Støtter shapefil-ZIP, Avenza-kartpakker, DXF og LandXML. DXF/LandXML leses som ETRS89 / UTM 32.</p>
         </aside>
         <aside class="panel right-panel">
           <h2>Legg til</h2>
           <div class="tool-grid">
             <button data-draw="freehand">Frihånd</button><button data-draw="LineString">Linje</button><button data-draw="Polygon">Område</button>
           </div>
+          <label for="draw-color">Farge for linje og frihånd</label>
+          <select id="draw-color"><option value="#dc6f45" selected>Rød</option><option value="#317356">Grønn</option><option value="#e0ad24">Gul</option></select>
           <hr>
           <button id="text-toggle" class="secondary wide" type="button" aria-expanded="false" aria-controls="text-content">Tekstboks</button>
           <div id="text-content" class="tool-content" hidden>
@@ -75,25 +81,28 @@
           <button id="symbol-toggle" class="secondary wide" type="button" aria-expanded="false" aria-controls="symbol-content">Symboler</button>
           <div id="symbol-content" class="symbol-content" hidden>
             <label for="symbol-type">Velg symbol</label>
-            <select id="symbol-type"><option value="culvert">Stikkrenne</option><option value="landing">Velteplass</option><option value="turning">Snuplass</option><option value="arrow-left">Gul pil venstre</option><option value="arrow-right">Gul pil høyre</option></select>
+            <select id="symbol-type"><option value="" selected disabled>Velg symbol …</option><option value="culvert">Stikkrenne</option><option value="landing">Velteplass</option><option value="turning">Snuplass</option><option value="arrow-left">Gul pil venstre</option><option value="arrow-right">Gul pil høyre</option></select>
             <label for="symbol-text">Tekst ved symbol</label>
             <input id="symbol-text" type="text" placeholder="For eksempel Ø 600 mm">
-            <button id="place-symbol" class="primary wide" type="button">Plasser symbol i kartet</button>
           </div>
           <hr>
-          <label class="file-button" for="photo-input">Velg eller ta bilde</label>
-          <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
-          <p id="photo-name" class="hint">Ingen bilde valgt.</p>
-          <button id="place-photo" class="primary wide" disabled>Plasser bilde i kartet</button>
+          <button id="photo-toggle" class="secondary wide" type="button" aria-expanded="false" aria-controls="photo-content">Bilde</button>
+          <div id="photo-content" class="tool-content" hidden>
+            <label class="file-button" for="photo-input">Velg eller ta bilde</label>
+            <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
+            <p id="photo-name" class="hint">Ingen bilde valgt.</p>
+            <button id="place-photo" class="primary wide" disabled>Plasser bilde i kartet</button>
+          </div>
           <hr>
           <button id="cancel-tool" class="secondary wide">Avbryt aktivt verktøy</button>
         </aside>
         <aside id="detail-card" class="detail-card" hidden>
           <button id="close-detail" class="close-button" aria-label="Lukk">×</button>
-          <p class="detail-type" id="detail-type"></p><h2 id="detail-title"></h2><p id="detail-body"></p><img id="detail-photo" alt="Kartfestet bilde" hidden>
+          <p class="detail-type" id="detail-type"></p><h2 id="detail-title"></h2><p id="detail-body"></p><a id="detail-link" class="detail-link" target="_blank" rel="noopener" hidden>Åpne mer informasjon</a><img id="detail-photo" alt="Kartfestet bilde" hidden>
           <div id="symbol-editor" class="symbol-editor" hidden>
             <label for="edit-symbol-type">Symboltype</label><select id="edit-symbol-type"><option value="culvert">Stikkrenne</option><option value="landing">Velteplass</option><option value="turning">Snuplass</option><option value="arrow-left">Gul pil venstre</option><option value="arrow-right">Gul pil høyre</option></select>
             <label for="edit-symbol-text">Tekst ved symbol</label><input id="edit-symbol-text" type="text">
+            <div id="culvert-rotation" hidden><label for="edit-symbol-rotation">Rotasjon <output id="edit-symbol-rotation-value">0°</output></label><input id="edit-symbol-rotation" type="range" min="0" max="350" step="10" value="0"></div>
             <button id="save-symbol" class="primary wide" type="button">Lagre endringer</button>
           </div>
           <div id="text-editor" class="symbol-editor" hidden>
@@ -101,6 +110,8 @@
             <label for="edit-note-text">Tekst</label><textarea id="edit-note-text" rows="4" placeholder="Skriv notat …"></textarea>
             <button id="save-text-note" class="primary wide" type="button">Lagre endringer</button>
           </div>
+          <div id="line-style-editor" class="symbol-editor" hidden><label for="edit-sketch-color">Linjefarge</label><select id="edit-sketch-color"><option value="#dc6f45">Rød</option><option value="#317356">Grønn</option><option value="#e0ad24">Gul</option></select><button id="save-sketch-style" class="primary wide" type="button">Lagre linjestil</button></div>
+          <button id="edit-geometry" class="secondary wide" type="button" hidden>Rediger punkter</button>
           <button id="delete-object" class="danger">Slett objekt</button>
         </aside>
         <div id="toast" class="toast" role="status" aria-live="polite"></div>
