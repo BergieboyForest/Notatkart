@@ -11,12 +11,12 @@
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="icon.svg" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.9.0/ol.css" />
-    <link rel="stylesheet" href="styles.css?v=4" />
+    <link rel="stylesheet" href="styles.css?v=5" />
     <script src="https://cdn.jsdelivr.net/npm/ol@10.9.0/dist/ol.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js" defer></script>
     <script src="https://unpkg.com/shpjs@6.2.0/dist/shp.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-    <script src="app.js?v=4" defer></script>
+    <script src="app.js?v=5" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -47,12 +47,13 @@
           <textarea id="note-text" rows="3" placeholder="Skriv notat …"></textarea>
           <button id="place-text" class="primary wide">Plasser tekst i kartet</button>
           <hr>
-          <h3>Symboler</h3>
-          <label for="culvert-diameter">Stikkrenne – diameter (mm)</label>
-          <input id="culvert-diameter" type="number" min="1" step="1" placeholder="For eksempel 600">
-          <button id="place-culvert" class="primary wide">Plasser stikkrenne</button>
-          <div class="tool-grid symbol-grid">
-            <button id="place-landing">Velteplass</button><button id="place-turning">Snuplass</button>
+          <button id="symbol-toggle" class="secondary wide" type="button" aria-expanded="false" aria-controls="symbol-content">Symboler</button>
+          <div id="symbol-content" class="symbol-content" hidden>
+            <label for="symbol-type">Velg symbol</label>
+            <select id="symbol-type"><option value="culvert">Stikkrenne</option><option value="landing">Velteplass</option><option value="turning">Snuplass</option></select>
+            <label for="symbol-text">Tekst ved symbol</label>
+            <input id="symbol-text" type="text" placeholder="For eksempel Ø 600 mm">
+            <button id="place-symbol" class="primary wide" type="button">Plasser symbol i kartet</button>
           </div>
           <hr>
           <label class="file-button" for="photo-input">Velg eller ta bilde</label>
@@ -65,6 +66,11 @@
         <aside id="detail-card" class="detail-card" hidden>
           <button id="close-detail" class="close-button" aria-label="Lukk">×</button>
           <p class="detail-type" id="detail-type"></p><h2 id="detail-title"></h2><p id="detail-body"></p><img id="detail-photo" alt="Kartfestet bilde" hidden>
+          <div id="symbol-editor" class="symbol-editor" hidden>
+            <label for="edit-symbol-type">Symboltype</label><select id="edit-symbol-type"><option value="culvert">Stikkrenne</option><option value="landing">Velteplass</option><option value="turning">Snuplass</option></select>
+            <label for="edit-symbol-text">Tekst ved symbol</label><input id="edit-symbol-text" type="text">
+            <button id="save-symbol" class="primary wide" type="button">Lagre endringer</button>
+          </div>
           <button id="delete-object" class="danger">Slett objekt</button>
         </aside>
         <div id="toast" class="toast" role="status" aria-live="polite"></div>
