@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="no">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1e4d3a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>Notatkart</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icon.svg" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.9.0/ol.css" />
+    <link rel="stylesheet" href="styles.css?v=3" />
+    <script src="https://cdn.jsdelivr.net/npm/ol@10.9.0/dist/ol.js" defer></script>
+    <script src="https://unpkg.com/shpjs@6.2.0/dist/shp.js" defer></script>
+    <script src="app.js?v=3" defer></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark">⌖</span><div><p>BEFARING</p><h1>Notatkart</h1></div></div>
+        <div class="top-actions"><button id="locate-button" class="secondary">Min posisjon</button><button id="export-button" class="primary">Eksporter JPEG</button></div>
+      </header>
+      <section class="map-area">
+        <div id="map" aria-label="Kart"></div>
+        <aside class="panel left-panel">
+          <h2>Kartlag</h2>
+          <label class="toggle"><input id="base-toggle" type="checkbox" checked><span>Grunnkart <small>Kartverket</small></span></label>
+          <label class="toggle"><input id="import-toggle" type="checkbox" checked><span>Importerte data <small id="import-count">0 objekt</small></span></label>
+          <label class="toggle"><input id="notes-toggle" type="checkbox" checked><span>Notater og skisser <small id="note-count">0 objekt</small></span></label>
+          <hr>
+          <label class="file-button" for="shape-input">Importer shapefil (ZIP)</label>
+          <input id="shape-input" type="file" accept=".zip,application/zip" hidden>
+          <p class="hint">ZIP-filen må inneholde minst .shp, .shx og .dbf.</p>
+        </aside>
+        <aside class="panel right-panel">
+          <h2>Legg til</h2>
+          <div class="tool-grid">
+            <button data-draw="freehand">Frihånd</button><button data-draw="LineString">Linje</button><button data-draw="Polygon">Område</button>
+          </div>
+          <hr>
+          <label for="note-title">Tekstboks</label>
+          <input id="note-title" type="text" placeholder="Overskrift (valgfritt)">
+          <textarea id="note-text" rows="3" placeholder="Skriv notat …"></textarea>
+          <button id="place-text" class="primary wide">Plasser tekst i kartet</button>
+          <hr>
+          <h3>Symboler</h3>
+          <label for="culvert-diameter">Stikkrenne – diameter (mm)</label>
+          <input id="culvert-diameter" type="number" min="1" step="1" placeholder="For eksempel 600">
+          <button id="place-culvert" class="primary wide">Plasser stikkrenne</button>
+          <div class="tool-grid symbol-grid">
+            <button id="place-landing">Velteplass</button><button id="place-turning">Snuplass</button>
+          </div>
+          <hr>
+          <label class="file-button" for="photo-input">Velg eller ta bilde</label>
+          <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
+          <p id="photo-name" class="hint">Ingen bilde valgt.</p>
+          <button id="place-photo" class="primary wide" disabled>Plasser bilde i kartet</button>
+          <hr>
+          <button id="cancel-tool" class="secondary wide">Avbryt aktivt verktøy</button>
+        </aside>
+        <aside id="detail-card" class="detail-card" hidden>
+          <button id="close-detail" class="close-button" aria-label="Lukk">×</button>
+          <p class="detail-type" id="detail-type"></p><h2 id="detail-title"></h2><p id="detail-body"></p><img id="detail-photo" alt="Kartfestet bilde" hidden>
+          <button id="delete-object" class="danger">Slett objekt</button>
+        </aside>
+        <div id="toast" class="toast" role="status" aria-live="polite"></div>
+        <p class="attribution">Grunnkart © Kartverket</p>
+      </section>
+    </main>
+  </body>
+</html>
