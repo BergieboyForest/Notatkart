@@ -16,7 +16,7 @@
     <script src="https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js" defer></script>
     <script src="https://unpkg.com/shpjs@6.2.0/dist/shp.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-    <script src="app.js?v=45" defer></script>
+    <script src="app.js?v=46" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -26,7 +26,8 @@
       </header>
       <section class="map-area">
         <div id="map" aria-label="Kart"></div>
-        <aside class="panel left-panel">
+        <aside class="panel left-panel collapsed">
+          <button class="panel-toggle" type="button" aria-expanded="false" aria-label="Åpne kartlag"><span class="panel-icon">▤</span><span>Kartlag</span></button>
           <h2>Kartlag</h2>
           <label class="toggle"><input id="base-toggle" type="checkbox" checked><span>Grunnkart <small>Kartverket</small></span></label>
           <label class="toggle"><input id="losmasser-toggle" type="checkbox"><span>Løsmassekart <small>NGU · sammenstilt visning</small></span></label>
@@ -44,7 +45,8 @@
           <input id="shape-input" type="file" accept=".zip,.dxf,.xml,application/zip,application/xml,text/xml" multiple hidden>
           <p class="hint">Støtter shapefil-ZIP, Avenza-kartpakker, DXF og LandXML. DXF/LandXML leses som ETRS89 / UTM 32.</p>
         </aside>
-        <aside class="panel right-panel">
+        <aside class="panel right-panel collapsed">
+          <button class="panel-toggle" type="button" aria-expanded="false" aria-label="Åpne verktøy"><span class="panel-icon">＋</span><span>Legg til</span></button>
           <h2>Legg til</h2>
           <div class="tool-grid">
             <button data-draw="freehand">Frihånd</button><button data-draw="LineString">Linje</button><button data-draw="Polygon">Område</button>
