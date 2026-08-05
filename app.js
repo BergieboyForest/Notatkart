@@ -1,5 +1,6 @@
 /* global ol, shp */
 const APP_KEY = "notatkart:data:v1";
+const VISIBILITY_KEY = "notatkart:layer-visibility:v1";
 const PHOTO_DB = "notatkart-photos";
 const PHOTO_STORE = "photos";
 const projection = "EPSG:3857";
@@ -16,12 +17,18 @@ let pendingPhoto = null;
 let pendingSymbol = null;
 let positionWatch;
 let toastTimer;
+let groupVisibility = JSON.parse(localStorage.getItem(VISIBILITY_KEY) || "{}");
 
 function uid() { return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
 function toast(message) { const el = $("toast"); el.textContent = message; el.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 3600); }
 const symbolNames = { culvert: "Stikkrenne", landing: "Velteplass", turning: "Snuplass" };
 function symbolText(feature) { if (feature.get("symbolText")) return feature.get("symbolText"); if (feature.get("symbolType") === "culvert" && feature.get("diameter")) return `Ø ${feature.get("diameter")} mm`; return symbolNames[feature.get("symbolType")] || "Symbol"; }
+function importKey(feature) { return `import:${feature.get("sourceName") || "ukjent"}`; }
+function noteKey(feature) { return feature.get("noteType") === "symbol" ? `symbol:${feature.get("symbolType") || "other"}` : `note:${feature.get("noteType") || "other"}`; }
+function groupIsVisible(key) { return groupVisibility[key] !== false; }
+function setGroupVisibility(key, visible) { groupVisibility[key] = visible; localStorage.setItem(VISIBILITY_KEY, JSON.stringify(groupVisibility)); importSource.changed(); drawingSource.changed(); notesSource.changed(); }
 function localFeatureStyle(feature) {
+  if (!groupIsVisible(noteKey(feature))) return null;
   const type = feature.get("noteType");
   if (type === "symbol") {
     const symbolType = feature.get("symbolType");
@@ -38,7 +45,7 @@ function localFeatureStyle(feature) {
   return new ol.style.Style({ fill: geometryType === "Polygon" ? new ol.style.Fill({ color: "rgba(220,111,69,.18)" }) : undefined, stroke: new ol.style.Stroke({ color: "#dc6f45", width: 4, lineCap: "round", lineJoin: "round" }), image: new ol.style.Circle({ radius: 5, fill: new ol.style.Fill({ color: "#dc6f45" }) }) });
 }
 function rasterStyle(feature) { const image = feature.get("image"); if (!image?.width) return new ol.style.Style({ fill: new ol.style.Fill({ color: "rgba(49,115,86,.18)" }), stroke: new ol.style.Stroke({ color: "#317356", width: 2, lineDash: [6, 4] }) }); return new ol.style.Style({ renderer(coordinates, state) { const ring = coordinates[0]; if (!ring?.length) return; const [topLeft, topRight, , bottomLeft] = ring; const context = state.context; context.save(); context.globalAlpha = 0.96; context.setTransform((topRight[0] - topLeft[0]) / image.width, (topRight[1] - topLeft[1]) / image.width, (bottomLeft[0] - topLeft[0]) / image.height, (bottomLeft[1] - topLeft[1]) / image.height, topLeft[0], topLeft[1]); context.drawImage(image, 0, 0); context.restore(); } }); }
-function importedStyle(feature) { if (feature.get("importType") === "raster") return rasterStyle(feature); return new ol.style.Style({ fill: new ol.style.Fill({ color: "rgba(49,115,86,.13)" }), stroke: new ol.style.Stroke({ color: "#317356", width: 2 }), image: new ol.style.Circle({ radius: 4, fill: new ol.style.Fill({ color: "#317356" }) }) }); }
+function importedStyle(feature) { if (!groupIsVisible(importKey(feature))) return null; if (feature.get("importType") === "raster") return rasterStyle(feature); return new ol.style.Style({ fill: new ol.style.Fill({ color: "rgba(49,115,86,.13)" }), stroke: new ol.style.Stroke({ color: "#317356", width: 2 }), image: new ol.style.Circle({ radius: 4, fill: new ol.style.Fill({ color: "#317356" }) }) }); }
 const baseLayer = new ol.layer.Tile({ source: new ol.source.TileWMS({ url: "https://wms.geonorge.no/skwms1/wms.norges_grunnkart", params: { LAYERS: "Norges_grunnkart", FORMAT: "image/png", TRANSPARENT: false }, crossOrigin: "anonymous" }) });
 const importLayer = new ol.layer.Vector({ source: importSource, style: importedStyle });
 const notesLayer = new ol.layer.Vector({ source: notesSource, style: localFeatureStyle });
@@ -46,7 +53,9 @@ const drawingLayer = new ol.layer.Vector({ source: drawingSource, style: localFe
 const positionLayer = new ol.layer.Vector({ source: positionSource, style: new ol.style.Style({ image: new ol.style.Circle({ radius: 8, fill: new ol.style.Fill({ color: "#2877d5" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }) }) }) });
 const map = new ol.Map({ target: "map", layers: [baseLayer, importLayer, drawingLayer, notesLayer, positionLayer], view: new ol.View({ center: ol.proj.fromLonLat([10.256, 60.168]), zoom: 8, maxZoom: 20 }), controls: ol.control.defaults.defaults({ attribution: false }) });
 
-function countObjects() { $("import-count").textContent = `${importSource.getFeatures().length} objekt${importSource.getFeatures().length === 1 ? "" : "er"}`; $("note-count").textContent = `${drawingSource.getFeatures().length + notesSource.getFeatures().length} objekt${drawingSource.getFeatures().length + notesSource.getFeatures().length === 1 ? "" : "er"}`; }
+function appendLayerRow(container, label, count, key) { const row = document.createElement("label"); const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.setAttribute("aria-label", `${label} (${count})`); checkbox.checked = groupIsVisible(key); checkbox.addEventListener("change", () => setGroupVisibility(key, checkbox.checked)); const text = document.createElement("span"); text.textContent = label; const amount = document.createElement("small"); amount.textContent = `${count}`; row.append(checkbox, text, amount); container.append(row); }
+function refreshLayerMenus() { const importList = $("import-list"); const importedGroups = new Map(); importSource.getFeatures().forEach((feature) => { const name = feature.get("sourceName") || "Importerte data"; importedGroups.set(name, (importedGroups.get(name) || 0) + 1); }); importList.replaceChildren(); if (importedGroups.size) importedGroups.forEach((count, name) => appendLayerRow(importList, name, count, `import:${name}`)); else importList.textContent = "Ingen importerte data ennå."; const notesList = $("notes-list"); const noteGroups = new Map(); [...drawingSource.getFeatures(), ...notesSource.getFeatures()].forEach((feature) => { const key = noteKey(feature); noteGroups.set(key, (noteGroups.get(key) || 0) + 1); }); const groups = [{ key: "note:sketch", label: "Skisser" }, { key: "note:text", label: "Tekstnotater" }, { key: "note:photo", label: "Bilder" }, { key: "symbol:culvert", label: "Stikkrenner" }, { key: "symbol:landing", label: "Velteplasser" }, { key: "symbol:turning", label: "Snuplasser" }]; notesList.replaceChildren(); groups.forEach((group) => appendLayerRow(notesList, group.label, noteGroups.get(group.key) || 0, group.key)); }
+function countObjects() { $("import-count").textContent = `${importSource.getFeatures().length} objekt${importSource.getFeatures().length === 1 ? "" : "er"}`; $("note-count").textContent = `${drawingSource.getFeatures().length + notesSource.getFeatures().length} objekt${drawingSource.getFeatures().length + notesSource.getFeatures().length === 1 ? "" : "er"}`; refreshLayerMenus(); }
 function serialise(source) { const images = source.getFeatures().map((feature) => [feature, feature.get("image")]); images.forEach(([feature, image]) => { if (image) feature.unset("image", true); }); const data = format.writeFeaturesObject(source.getFeatures(), { featureProjection: projection, dataProjection: projection }); images.forEach(([feature, image]) => { if (image) feature.set("image", image, true); }); return data; }
 function readInto(source, data) { if (data?.features) source.addFeatures(format.readFeatures(data, { featureProjection: projection, dataProjection: projection })); }
 function saveData() { localStorage.setItem(APP_KEY, JSON.stringify({ drawings: serialise(drawingSource), notes: serialise(notesSource), imports: serialise(importSource) })); countObjects(); }
@@ -81,6 +90,9 @@ $("place-photo").addEventListener("click", () => { if (pendingPhoto) selectPlace
 $("base-toggle").addEventListener("change", (event) => { baseLayer.setVisible(event.target.checked); });
 $("import-toggle").addEventListener("change", (event) => { importLayer.setVisible(event.target.checked); });
 $("notes-toggle").addEventListener("change", (event) => { drawingLayer.setVisible(event.target.checked); notesLayer.setVisible(event.target.checked); });
+function toggleSubmenu(buttonId, menuId) { $(buttonId).addEventListener("click", () => { const open = $(menuId).hidden; $(menuId).hidden = !open; $(buttonId).setAttribute("aria-expanded", String(open)); }); }
+toggleSubmenu("import-expand", "import-list");
+toggleSubmenu("notes-expand", "notes-list");
 async function importShapeFile(file) { const parsed = await shp(await file.arrayBuffer()); const collections = parsed.type === "FeatureCollection" ? [parsed] : Object.values(parsed); let total = 0; collections.forEach((collection) => { const features = format.readFeatures(collection, { dataProjection: "EPSG:4326", featureProjection: projection }); features.forEach((feature) => feature.setProperties({ id: uid(), sourceName: file.name, imported: true, importType: "shape" })); importSource.addFeatures(features); total += features.length; }); return total; }
 async function importAvenzaFile(file, zip, names) { const jgwName = names.find((name) => /\.(jgw|jpgw)$/i.test(name)); const jpegName = names.find((name) => /\.(jpg|jpeg)$/i.test(name)); const prjName = names.find((name) => /\.prj$/i.test(name)); if (!jgwName || !jpegName || !prjName) throw new Error("Kartpakken mangler JPEG, JGW eller PRJ."); const values = (await zip.file(jgwName).async("string")).trim().split(/\s+/).map(Number); if (values.length !== 6 || values.some((value) => !Number.isFinite(value))) throw new Error("JGW-filen har ugyldige koordinater."); const dataProjection = projectionFromPrj(await zip.file(prjName).async("string")); const blob = await zip.file(jpegName).async("blob"); const image = await rasterImage(blob); const rasterId = uid(); await savePhoto(rasterId, blob); const feature = new ol.Feature({ geometry: new ol.geom.Polygon([worldCorners(values, image.width, image.height, dataProjection)]), id: uid(), importType: "raster", rasterId, sourceName: file.name, title: file.name, body: "Georeferert JPEG-kartpakke" }); feature.set("image", image, true); importSource.addFeature(feature); return 1; }
 async function importZipFile(file) { const zip = await JSZip.loadAsync(file); const names = Object.keys(zip.files).filter((name) => !zip.files[name].dir); if (names.some((name) => /\.shp$/i.test(name))) return importShapeFile(file); if (names.some((name) => /\.(jgw|jpgw)$/i.test(name)) && names.some((name) => /\.(jpg|jpeg)$/i.test(name))) return importAvenzaFile(file, zip, names); throw new Error("Fant verken shapefil eller JPEG/JGW-kartpakke i ZIP-filen."); }

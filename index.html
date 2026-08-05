@@ -11,12 +11,12 @@
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="icon.svg" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.9.0/ol.css" />
-    <link rel="stylesheet" href="styles.css?v=5" />
+    <link rel="stylesheet" href="styles.css?v=6" />
     <script src="https://cdn.jsdelivr.net/npm/ol@10.9.0/dist/ol.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js" defer></script>
     <script src="https://unpkg.com/shpjs@6.2.0/dist/shp.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-    <script src="app.js?v=5" defer></script>
+    <script src="app.js?v=6" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -29,8 +29,10 @@
         <aside class="panel left-panel">
           <h2>Kartlag</h2>
           <label class="toggle"><input id="base-toggle" type="checkbox" checked><span>Grunnkart <small>Kartverket</small></span></label>
-          <label class="toggle"><input id="import-toggle" type="checkbox" checked><span>Importerte data <small id="import-count">0 objekt</small></span></label>
-          <label class="toggle"><input id="notes-toggle" type="checkbox" checked><span>Notater og skisser <small id="note-count">0 objekt</small></span></label>
+          <div class="layer-heading"><label class="toggle"><input id="import-toggle" type="checkbox" checked><span>Importerte data <small id="import-count">0 objekt</small></span></label><button id="import-expand" class="layer-expand" type="button" aria-label="Vis importerte data" aria-expanded="false">⌄</button></div>
+          <div id="import-list" class="layer-submenu" hidden></div>
+          <div class="layer-heading"><label class="toggle"><input id="notes-toggle" type="checkbox" checked><span>Notater og skisser <small id="note-count">0 objekt</small></span></label><button id="notes-expand" class="layer-expand" type="button" aria-label="Vis notater og skisser" aria-expanded="false">⌄</button></div>
+          <div id="notes-list" class="layer-submenu" hidden></div>
           <hr>
           <label class="file-button" for="shape-input">Importer kartdata (ZIP)</label>
           <input id="shape-input" type="file" accept=".zip,application/zip" multiple hidden>
