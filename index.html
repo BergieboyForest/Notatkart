@@ -16,7 +16,7 @@
     <script src="https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js" defer></script>
     <script src="https://unpkg.com/shpjs@6.2.0/dist/shp.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-    <script src="app.js?v=46" defer></script>
+    <script src="app.js?v=47" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -26,6 +26,7 @@
       </header>
       <section class="map-area">
         <div id="map" aria-label="Kart"></div>
+        <div id="map-scale" class="map-scale" aria-label="Målestokk"><span id="scale-ratio">1 : 2 000</span><span class="scale-line"><i id="scale-bar"></i></span><span id="scale-distance">50 m</span></div>
         <aside class="panel left-panel collapsed">
           <button class="panel-toggle" type="button" aria-expanded="false" aria-label="Åpne kartlag"><span class="panel-icon">▤</span><span>Kartlag</span></button>
           <h2>Kartlag</h2>
