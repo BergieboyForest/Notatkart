@@ -16,7 +16,7 @@
     <script src="https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js" defer></script>
     <script src="https://unpkg.com/shpjs@6.2.0/dist/shp.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-    <script src="app.js?v=9" defer></script>
+    <script src="app.js?v=10" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -50,6 +50,16 @@
           <input id="note-title" type="text" placeholder="Overskrift (valgfritt)">
           <textarea id="note-text" rows="3" placeholder="Skriv notat …"></textarea>
           <button id="place-text" class="primary wide">Plasser tekst i kartet</button>
+          <hr>
+          <label for="position-title">Lagre posisjon</label>
+          <input id="position-title" type="text" placeholder="Overskrift (valgfritt)">
+          <textarea id="position-text" rows="2" placeholder="Notat til denne posisjonen …"></textarea>
+          <button id="save-position" class="primary wide" type="button">Lagre min posisjon</button>
+          <hr>
+          <label>Sporlogg <small>Maks 10 km</small></label>
+          <button id="start-track" class="primary wide" type="button">Start sporlogg</button>
+          <button id="stop-track" class="secondary wide" type="button" disabled>Stopp og lagre spor</button>
+          <p id="track-status" class="hint">Ingen aktiv sporlogg.</p>
           <hr>
           <button id="symbol-toggle" class="secondary wide" type="button" aria-expanded="false" aria-controls="symbol-content">Symboler</button>
           <div id="symbol-content" class="symbol-content" hidden>

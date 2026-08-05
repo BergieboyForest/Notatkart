@@ -16,6 +16,9 @@ let selectedFeature = null;
 let pendingPhoto = null;
 let pendingSymbol = null;
 let positionWatch;
+let trackWatch;
+let trackFeature = null;
+let trackCoordinates = [];
 let toastTimer;
 let groupVisibility = JSON.parse(localStorage.getItem(VISIBILITY_KEY) || "{}");
 
@@ -49,7 +52,8 @@ function localFeatureStyle(feature) {
     };
     return styles[symbolType];
   }
-  if (type === "text") return new ol.style.Style({ image: new ol.style.Circle({ radius: 9, fill: new ol.style.Fill({ color: "#dc6f45" }), stroke: new ol.style.Stroke({ color: "#fff", width: 2 }) }), text: new ol.style.Text({ text: feature.get("title") || "Notat", offsetY: -19, font: "700 13px system-ui", fill: new ol.style.Fill({ color: "#17302a" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }) }) });
+  if (type === "text" || type === "location") return new ol.style.Style({ image: new ol.style.Circle({ radius: 9, fill: new ol.style.Fill({ color: type === "location" ? "#2877d5" : "#dc6f45" }), stroke: new ol.style.Stroke({ color: "#fff", width: 2 }) }), text: new ol.style.Text({ text: feature.get("title") || "Notat", offsetY: -19, font: "700 13px system-ui", fill: new ol.style.Fill({ color: "#17302a" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }) }) });
+  if (type === "track") return new ol.style.Style({ stroke: new ol.style.Stroke({ color: "#2877d5", width: 5, lineCap: "round", lineJoin: "round" }), image: new ol.style.Circle({ radius: 5, fill: new ol.style.Fill({ color: "#2877d5" }), stroke: new ol.style.Stroke({ color: "#fff", width: 2 }) }) });
   if (type === "photo") return new ol.style.Style({ image: new ol.style.RegularShape({ points: 4, radius: 12, angle: Math.PI / 4, fill: new ol.style.Fill({ color: "#1e4d3a" }), stroke: new ol.style.Stroke({ color: "#fff", width: 2 }) }), text: new ol.style.Text({ text: "Bilde", offsetY: -21, font: "700 12px system-ui", fill: new ol.style.Fill({ color: "#17302a" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }) }) });
   const geometryType = feature.getGeometry().getType();
   return new ol.style.Style({ fill: geometryType === "Polygon" ? new ol.style.Fill({ color: "rgba(220,111,69,.18)" }) : undefined, stroke: new ol.style.Stroke({ color: "#dc6f45", width: 4, lineCap: "round", lineJoin: "round" }), image: new ol.style.Circle({ radius: 5, fill: new ol.style.Fill({ color: "#dc6f45" }) }) });
@@ -120,3 +124,103 @@ $("export-button").addEventListener("click", exportJpeg);
 loadData();
 restoreRasterImages();
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js"));
+
+// GPS-notater og sporlogger lagres i de samme lokale kartdataene som resten av notatene.
+function refreshLayerMenus() {
+  const importList = $("import-list");
+  const importedGroups = new Map();
+  importSource.getFeatures().forEach((feature) => { const name = feature.get("sourceName") || "Importerte data"; importedGroups.set(name, (importedGroups.get(name) || 0) + 1); });
+  importList.replaceChildren();
+  if (importedGroups.size) importedGroups.forEach((count, name) => appendLayerRow(importList, name, count, `import:${name}`)); else importList.textContent = "Ingen importerte data ennå.";
+  const notesList = $("notes-list");
+  const noteGroups = new Map();
+  [...drawingSource.getFeatures(), ...notesSource.getFeatures()].forEach((feature) => { const key = noteKey(feature); noteGroups.set(key, (noteGroups.get(key) || 0) + 1); });
+  const groups = [
+    { key: "note:sketch", label: "Skisser" }, { key: "note:text", label: "Tekstnotater" }, { key: "note:location", label: "Lagrede posisjoner" }, { key: "note:track", label: "Sporlogger" }, { key: "note:photo", label: "Bilder" },
+    { key: "symbol:culvert", label: "Stikkrenner" }, { key: "symbol:landing", label: "Velteplasser" }, { key: "symbol:turning", label: "Snuplasser" }, { key: "symbol:arrow-left", label: "Gule piler mot venstre" }, { key: "symbol:arrow-right", label: "Gule piler mot høyre" }
+  ];
+  notesList.replaceChildren();
+  groups.forEach((group) => appendLayerRow(notesList, group.label, noteGroups.get(group.key) || 0, group.key));
+}
+
+async function showDetail(feature) {
+  selectedFeature = feature;
+  const type = feature.get("noteType");
+  $("detail-type").textContent = type === "photo" ? "KARTFESTET BILDE" : type === "location" ? "LAGRET POSISJON" : type === "text" ? "KARTFESTET NOTAT" : type === "track" ? "SPORLOGG" : type === "symbol" ? "KARTFESTET SYMBOL" : type === "sketch" ? "SKISSE" : "IMPORTERT SHAPE";
+  $("detail-title").textContent = type === "symbol" ? symbolNames[feature.get("symbolType")] : feature.get("title") || (type === "track" ? "Sporlogg" : type === "sketch" ? "Skisse" : feature.get("sourceName") || "Kartobjekt");
+  $("detail-body").textContent = type === "symbol" ? (symbolText(feature) || "Kartfestet symbol") : type === "track" ? `Lengde: ${Math.round(feature.get("distanceMeters") || 0)} m` : feature.get("body") || (type === "sketch" ? "Tegnet i Notatkart." : "Importert shapefil.");
+  $("symbol-editor").hidden = type !== "symbol";
+  $("text-editor").hidden = type !== "text" && type !== "location";
+  if (type === "symbol") { $("edit-symbol-type").value = feature.get("symbolType") || "culvert"; $("edit-symbol-text").value = feature.get("symbolText") || symbolText(feature); }
+  if (type === "text" || type === "location") { $("edit-note-title").value = feature.get("title") || ""; $("edit-note-text").value = feature.get("body") || ""; }
+  const image = $("detail-photo"); image.hidden = true; image.src = "";
+  if (type === "photo") { const blob = await getPhoto(feature.get("photoId")); if (blob) { image.src = URL.createObjectURL(blob); image.hidden = false; } else $("detail-body").textContent = "Bildefilen finnes ikke lenger lokalt på denne enheten."; }
+  $("detail-card").hidden = false;
+}
+
+function updatePositionMarker(coordinate) {
+  const marker = positionSource.getFeatures()[0];
+  if (marker) marker.getGeometry().setCoordinates(coordinate); else positionSource.addFeature(new ol.Feature(new ol.geom.Point(coordinate)));
+}
+
+function gpsCoordinate(position) { return ol.proj.fromLonLat([position.coords.longitude, position.coords.latitude]); }
+function gpsError() { toast("Fikk ikke posisjon. Kontroller at du har gitt tillatelse."); }
+
+function saveCurrentPosition() {
+  if (!navigator.geolocation) { toast("Denne nettleseren støtter ikke posisjon."); return; }
+  $("save-position").disabled = true;
+  $("save-position").textContent = "Finner posisjon …";
+  navigator.geolocation.getCurrentPosition((position) => {
+    const coordinate = gpsCoordinate(position);
+    updatePositionMarker(coordinate);
+    const title = $("position-title").value.trim() || "Lagret posisjon";
+    const body = $("position-text").value.trim();
+    notesSource.addFeature(new ol.Feature({ geometry: new ol.geom.Point(coordinate), id: uid(), noteType: "location", title, body, accuracy: Math.round(position.coords.accuracy), createdAt: new Date().toISOString() }));
+    $("position-title").value = ""; $("position-text").value = "";
+    $("save-position").disabled = false; $("save-position").textContent = "Lagre min posisjon";
+    saveData(); toast("Posisjon og notat er lagret lokalt.");
+  }, () => { $("save-position").disabled = false; $("save-position").textContent = "Lagre min posisjon"; gpsError(); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 });
+}
+
+function trackLength() { return trackCoordinates.length > 1 ? ol.sphere.getLength(new ol.geom.LineString(trackCoordinates), { projection }) : 0; }
+function updateTrackStatus() { $("track-status").textContent = trackWatch ? `Sporer: ${(trackLength() / 1000).toFixed(2)} km av 10 km.` : "Ingen aktiv sporlogg."; }
+function stopTrack(reachedLimit = false) {
+  if (trackWatch) navigator.geolocation.clearWatch(trackWatch);
+  trackWatch = undefined;
+  $("start-track").disabled = false; $("stop-track").disabled = true;
+  const distanceMeters = trackLength();
+  if (trackFeature && trackCoordinates.length > 1) { trackFeature.setProperties({ id: uid(), noteType: "track", title: "Sporlogg", distanceMeters, createdAt: new Date().toISOString() }); saveData(); toast(reachedLimit ? "Sporloggen stoppet ved maksimal lengde på 10 km." : `Sporloggen er lagret (${Math.round(distanceMeters)} m).`); }
+  else if (!reachedLimit) toast("Sporloggen ble avsluttet før nok GPS-punkter var registrert.");
+  trackFeature = null; trackCoordinates = []; updateTrackStatus();
+}
+function startTrack() {
+  if (!navigator.geolocation) { toast("Denne nettleseren støtter ikke posisjon."); return; }
+  if (trackWatch) return;
+  trackCoordinates = []; trackFeature = null;
+  $("start-track").disabled = true; $("stop-track").disabled = false;
+  $("track-status").textContent = "Venter på GPS-posisjon …";
+  trackWatch = navigator.geolocation.watchPosition((position) => {
+    const coordinate = gpsCoordinate(position); updatePositionMarker(coordinate);
+    if (!trackCoordinates.length) { trackCoordinates.push(coordinate); updateTrackStatus(); return; }
+    const last = trackCoordinates[trackCoordinates.length - 1];
+    if (Math.hypot(coordinate[0] - last[0], coordinate[1] - last[1]) < 3) return;
+    const candidate = [...trackCoordinates, coordinate];
+    const candidateLength = ol.sphere.getLength(new ol.geom.LineString(candidate), { projection });
+    if (candidateLength >= 10000) { stopTrack(true); return; }
+    trackCoordinates.push(coordinate);
+    if (!trackFeature) { trackFeature = new ol.Feature(new ol.geom.LineString(trackCoordinates)); drawingSource.addFeature(trackFeature); }
+    else trackFeature.getGeometry().setCoordinates(trackCoordinates);
+    updateTrackStatus();
+  }, () => { stopTrack(); gpsError(); }, { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
+  toast("Sporlogg startet. Den lagres når du stopper den.");
+}
+
+$("save-position").addEventListener("click", saveCurrentPosition);
+$("start-track").addEventListener("click", startTrack);
+$("stop-track").addEventListener("click", () => stopTrack());
+$("save-text-note").addEventListener("click", () => {
+  if (!selectedFeature || selectedFeature.get("noteType") !== "location") return;
+  const title = $("edit-note-title").value.trim(); const body = $("edit-note-text").value.trim();
+  if (!title && !body) { toast("Notatet kan ikke være tomt."); return; }
+  selectedFeature.setProperties({ title: title || "Lagret posisjon", body }); saveData(); showDetail(selectedFeature); notesSource.changed(); toast("Posisjonsnotatet er oppdatert.");
+});
