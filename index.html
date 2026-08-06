@@ -18,7 +18,7 @@
     <script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-    <script src="app.js?v=54" defer></script>
+    <script src="app.js?v=55" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -28,7 +28,7 @@
       </header>
       <section class="map-area">
         <div id="map" aria-label="Kart"></div>
-        <div id="quick-menu" class="quick-menu" hidden><button data-quick="note" type="button">Notat</button><button data-quick="photo" type="button">Bilde</button><button data-quick="culvert" type="button">Stikkrenne</button><button data-quick="landing" type="button">Velteplass</button></div>
+        <div id="quick-menu" class="quick-menu" hidden><button id="close-quick-menu" class="quick-menu-close" type="button" aria-label="Lukk hurtigmeny">×</button><button data-quick="note" type="button">Notat</button><button data-quick="photo" type="button">Bilde</button><button data-quick="culvert" type="button">Stikkrenne</button><button data-quick="landing" type="button">Velteplass</button></div>
         <div id="map-scale" class="map-scale" aria-label="Målestokk"><span id="scale-ratio">1 : 2 000</span><span class="scale-line"><i id="scale-bar"></i></span><span id="scale-distance">50 m</span></div>
         <aside class="panel left-panel collapsed">
           <button class="panel-toggle" type="button" aria-expanded="false" aria-label="Åpne kartlag"><span class="panel-icon">▤</span><span>Kartlag</span></button>

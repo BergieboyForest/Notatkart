@@ -21,6 +21,7 @@ let pendingSymbol = null;
 let quickCoordinate = null;
 let quickPhotoCoordinate = null;
 let longPressTimer;
+let quickMenuTimer;
 let ignoreSingleClickUntil = 0;
 let positionWatch;
 let trackWatch;
@@ -211,8 +212,11 @@ function identifyProperties(text) { try { const data = JSON.parse(text); const f
 async function identifyLayer(layer, label, coordinate) { const source = layer.getSource(); for (const infoFormat of ["application/json", "text/html"]) { const url = source.getFeatureInfoUrl(coordinate, map.getView().getResolution(), map.getView().getProjection(), { INFO_FORMAT: infoFormat, FEATURE_COUNT: 1 }); if (!url) continue; try { const response = await fetch(url); if (!response.ok) continue; const properties = identifyProperties(await response.text()); if (properties) return { label, properties }; } catch { /* Try the other format or the next visible WMS layer. */ } } return null; }
 async function identifyExternalFeature(coordinate) { const candidates = [{ layer: kulturminnerLayer, label: "KULTURMINNE · RIKSANTIKVAREN" }, { layer: artskartLayer, label: "ARTSKART · ARTSDATA" }, { layer: nokkelbiotoperLayer, label: "NØKKELBIOTOP · NIBIO" }]; let attempted = false; for (const candidate of candidates) { if (!candidate.layer.getVisible()) continue; attempted = true; const result = await identifyLayer(candidate.layer, candidate.label, coordinate); if (!result) continue; selectedFeature = null; $("detail-type").textContent = result.label; $("detail-title").textContent = identifyTitle(result.properties, "Kartobjekt"); $("detail-body").textContent = identifyText(result.properties) || "Ingen tilgjengelig objektinformasjon."; $("detail-photo").hidden = true; $("detail-photo").src = ""; $("symbol-editor").hidden = true; $("text-editor").hidden = true; $("edit-geometry").hidden = true; $("delete-object").hidden = true; const href = result.properties.link || result.properties.url || result.properties.URL; const detailLink = $("detail-link"); detailLink.hidden = !href; if (href) detailLink.href = href; $("detail-card").hidden = false; return; } hideDetail(); if (attempted) toast("Fant ingen objektinformasjon på dette punktet."); }
 map.on("singleclick", async (event) => { if (Date.now() < ignoreSingleClickUntil) return; if (toolMode === "text") { addText(event.coordinate); deactivateTool(); return; } if (toolMode === "photo") { await addPhoto(event.coordinate); deactivateTool(); return; } if (toolMode === "symbol") { addSymbol(event.coordinate); deactivateTool(); return; } let found; map.forEachFeatureAtPixel(event.pixel, (feature, layer) => { if (layer === notesLayer || layer === drawingLayer) { found = feature; return true; } }, { hitTolerance: 14 }); if (found) showDetail(found); else await identifyExternalFeature(event.coordinate); });
-function hideQuickMenu() { $("quick-menu").hidden = true; }
-function openQuickMenu(coordinate, pixel) { quickCoordinate = coordinate; const menu = $("quick-menu"); menu.style.left = `${Math.max(8, Math.min(pixel[0] - 100, map.getSize()[0] - 228))}px`; menu.style.top = `${Math.max(62, Math.min(pixel[1] - 42, map.getSize()[1] - 110))}px`; menu.hidden = false; }
+function hideQuickMenu() { clearTimeout(quickMenuTimer); $("quick-menu").hidden = true; }
+function openQuickMenu(coordinate, pixel) { quickCoordinate = coordinate; const menu = $("quick-menu"); menu.style.left = `${Math.max(8, Math.min(pixel[0] - 100, map.getSize()[0] - 228))}px`; menu.style.top = `${Math.max(62, Math.min(pixel[1] - 42, map.getSize()[1] - 110))}px`; menu.hidden = false; clearTimeout(quickMenuTimer); quickMenuTimer = setTimeout(hideQuickMenu, 5000); }
+$("close-quick-menu").addEventListener("click", hideQuickMenu);
+$("close-quick-menu").addEventListener("touchend", (event) => { event.preventDefault(); hideQuickMenu(); }, { passive: false });
+document.querySelector(".map-area").addEventListener("pointerdown", (event) => { if (!event.target.closest("#quick-menu")) hideQuickMenu(); }, true);
 function addQuickNote() {
   if (!quickCoordinate) return;
   const feature = new ol.Feature({ geometry: new ol.geom.Point(quickCoordinate), id: uid(), noteType: "text", title: "Notat", body: "", createdAt: new Date().toISOString() });
