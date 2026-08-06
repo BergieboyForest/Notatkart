@@ -9,6 +9,7 @@ button,.file-button { appearance:none; border:1px solid #b9c8bd; border-radius:9
 
 .map-scale { position:absolute; z-index:2; left:14px; bottom:13px; display:flex; align-items:flex-end; gap:7px; padding:6px 8px; border-radius:8px; color:#183d2f; background:rgba(250,252,247,.88); box-shadow:0 2px 8px rgba(24,61,47,.12); font-size:11px; font-weight:800; font-variant-numeric:tabular-nums; pointer-events:none; }.scale-line { display:block; width:92px; height:8px; border:2px solid #183d2f; border-top:0; }.scale-line i { display:block; height:4px; border-left:2px solid #183d2f; border-right:2px solid #183d2f; }.ol-zoom { bottom:52px; }
 .quick-menu { position:absolute; z-index:4; display:flex; flex-wrap:wrap; gap:7px; width:220px; padding:7px; border:1px solid rgba(205,219,204,.9); border-radius:13px; background:rgba(255,255,253,.96); box-shadow:0 10px 28px rgba(28,55,42,.2); }.quick-menu button { flex:1 0 43%; padding:8px 6px; font-size:12px; }.quick-menu .quick-menu-close { flex:0 0 auto; position:absolute; top:-10px; right:-10px; display:grid; place-items:center; width:27px; height:27px; padding:0; border-color:#b9c8bd; border-radius:50%; color:#17302a; background:#fff; font-size:21px; line-height:1; box-shadow:0 3px 9px rgba(28,55,42,.2); }.project-transfer { display:grid; gap:7px; margin-top:10px; }
+.quick-menu[hidden] { display:none; }
 #close-quick-menu { display:none; }
 
 /* Kart-først: verktøy og kartlag åpnes bare når de trengs. */
