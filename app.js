@@ -312,15 +312,14 @@ $("project-input").addEventListener("change", async (event) => { const file = ev
 renderProjectPicker();
 const rightTools = document.querySelector(".right-panel");
 $("draw-menu-content").append(rightTools.querySelector(".tool-grid"), rightTools.querySelector('label[for="draw-color"]'), $("draw-color"));
-$("position-menu-content").append($("position-toggle"), $("position-content"));
 $("track-menu-content").append($("track-toggle"), $("track-content"));
 $("cancel-tool").remove();
 rightTools.hidden = true;
-function toggleTopMenu(toggleId, menuId) { $(toggleId).addEventListener("click", () => { const open = $(menuId).hidden; ["draw-menu", "position-menu", "track-menu"].forEach((id) => { $(id).hidden = true; }); $(menuId).hidden = !open; $(toggleId).setAttribute("aria-expanded", String(open)); }); }
+function toggleTopMenu(toggleId, menuId) { $(toggleId).addEventListener("click", () => { const open = $(menuId).hidden; ["draw-menu", "track-menu"].forEach((id) => { $(id).hidden = true; }); $(menuId).hidden = !open; $(toggleId).setAttribute("aria-expanded", String(open)); }); }
 toggleTopMenu("draw-menu-toggle", "draw-menu");
-toggleTopMenu("position-menu-toggle", "position-menu");
 toggleTopMenu("track-menu-toggle", "track-menu");
-document.addEventListener("pointerdown", (event) => { if (event.target instanceof Element && !event.target.closest(".top-tool")) ["draw-menu", "position-menu", "track-menu"].forEach((id) => { $(id).hidden = true; }); }, true);
+document.addEventListener("pointerdown", (event) => { if (event.target instanceof Element && !event.target.closest(".top-tool")) ["draw-menu", "track-menu"].forEach((id) => { $(id).hidden = true; }); }, true);
+$("save-position-now").addEventListener("click", saveQuickPosition);
 function initialisePanels() {
   const panels = [...document.querySelectorAll(".panel")];
   const setCollapsed = (panel, collapsed) => { const button = panel.querySelector(".panel-toggle"); panel.classList.toggle("collapsed", collapsed); button.setAttribute("aria-expanded", String(!collapsed)); button.setAttribute("aria-label", `${collapsed ? "Åpne" : "Lukk"} ${panel.classList.contains("left-panel") ? "kartlag" : "verktøy"}`); setTimeout(() => map.updateSize(), 190); };
@@ -405,6 +404,16 @@ function saveCurrentPosition() {
     $("save-position").disabled = false; $("save-position").textContent = "Lagre min posisjon";
     saveData(); toast("Posisjon og notat er lagret lokalt.");
   }, () => { $("save-position").disabled = false; $("save-position").textContent = "Lagre min posisjon"; gpsError(); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 });
+}
+function saveQuickPosition() {
+  if (!navigator.geolocation) { toast("Denne nettleseren støtter ikke posisjon."); return; }
+  const button = $("save-position-now"); button.disabled = true;
+  navigator.geolocation.getCurrentPosition((position) => {
+    const coordinate = gpsCoordinate(position); updatePositionMarker(coordinate);
+    const feature = new ol.Feature({ geometry: new ol.geom.Point(coordinate), id: uid(), noteType: "text", title: "Notat", body: "", createdAt: new Date().toISOString() });
+    notesSource.addFeature(feature); saveData(); button.disabled = false; showDetail(feature);
+    requestAnimationFrame(() => { $("edit-note-title").focus(); $("edit-note-title").select(); });
+  }, () => { button.disabled = false; gpsError(); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 });
 }
 
 function trackLength() { return trackCoordinates.length > 1 ? ol.sphere.getLength(new ol.geom.LineString(trackCoordinates), { projection }) : 0; }
