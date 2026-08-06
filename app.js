@@ -300,8 +300,12 @@ function initialisePanels() {
   panels.forEach((panel) => panel.querySelector(".panel-toggle").addEventListener("click", () => { const opening = panel.classList.contains("collapsed"); if (opening) panels.filter((other) => other !== panel).forEach((other) => setCollapsed(other, true)); setCollapsed(panel, !opening); }));
 }
 initialisePanels();
-$("project-select").addEventListener("change", (event) => switchProject(event.target.value));
-$("new-project").addEventListener("click", addProject);
+function closeProjectMenu() { $("project-menu").hidden = true; $("project-select").hidden = true; $("project-menu-toggle").setAttribute("aria-expanded", "false"); $("switch-project").setAttribute("aria-expanded", "false"); }
+$("project-menu-toggle").addEventListener("click", () => { const open = $("project-menu").hidden; $("project-menu").hidden = !open; $("project-select").hidden = true; $("project-menu-toggle").setAttribute("aria-expanded", String(open)); });
+$("switch-project").addEventListener("click", () => { $("project-select").hidden = false; $("switch-project").setAttribute("aria-expanded", "true"); requestAnimationFrame(() => { $("project-select").focus(); $("project-select").click(); }); });
+$("project-select").addEventListener("change", (event) => { switchProject(event.target.value); closeProjectMenu(); });
+$("new-project").addEventListener("click", () => { addProject(); closeProjectMenu(); });
+document.addEventListener("pointerdown", (event) => { if (event.target instanceof Element && !event.target.closest(".project-controls")) closeProjectMenu(); }, true);
 $("project-name").addEventListener("change", renameProject);
 $("project-name").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } });
 loadData();
