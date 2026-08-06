@@ -211,8 +211,19 @@ function identifyProperties(text) { try { const data = JSON.parse(text); const f
 async function identifyLayer(layer, label, coordinate) { const source = layer.getSource(); for (const infoFormat of ["application/json", "text/html"]) { const url = source.getFeatureInfoUrl(coordinate, map.getView().getResolution(), map.getView().getProjection(), { INFO_FORMAT: infoFormat, FEATURE_COUNT: 1 }); if (!url) continue; try { const response = await fetch(url); if (!response.ok) continue; const properties = identifyProperties(await response.text()); if (properties) return { label, properties }; } catch { /* Try the other format or the next visible WMS layer. */ } } return null; }
 async function identifyExternalFeature(coordinate) { const candidates = [{ layer: kulturminnerLayer, label: "KULTURMINNE · RIKSANTIKVAREN" }, { layer: artskartLayer, label: "ARTSKART · ARTSDATA" }, { layer: nokkelbiotoperLayer, label: "NØKKELBIOTOP · NIBIO" }]; let attempted = false; for (const candidate of candidates) { if (!candidate.layer.getVisible()) continue; attempted = true; const result = await identifyLayer(candidate.layer, candidate.label, coordinate); if (!result) continue; selectedFeature = null; $("detail-type").textContent = result.label; $("detail-title").textContent = identifyTitle(result.properties, "Kartobjekt"); $("detail-body").textContent = identifyText(result.properties) || "Ingen tilgjengelig objektinformasjon."; $("detail-photo").hidden = true; $("detail-photo").src = ""; $("symbol-editor").hidden = true; $("text-editor").hidden = true; $("edit-geometry").hidden = true; $("delete-object").hidden = true; const href = result.properties.link || result.properties.url || result.properties.URL; const detailLink = $("detail-link"); detailLink.hidden = !href; if (href) detailLink.href = href; $("detail-card").hidden = false; return; } hideDetail(); if (attempted) toast("Fant ingen objektinformasjon på dette punktet."); }
 map.on("singleclick", async (event) => { if (Date.now() < ignoreSingleClickUntil) return; if (toolMode === "text") { addText(event.coordinate); deactivateTool(); return; } if (toolMode === "photo") { await addPhoto(event.coordinate); deactivateTool(); return; } if (toolMode === "symbol") { addSymbol(event.coordinate); deactivateTool(); return; } let found; map.forEachFeatureAtPixel(event.pixel, (feature, layer) => { if (layer === notesLayer || layer === drawingLayer) { found = feature; return true; } }, { hitTolerance: 14 }); if (found) showDetail(found); else await identifyExternalFeature(event.coordinate); });
-function hideQuickMenu() { $("quick-menu").hidden = true; }
-function openQuickMenu(coordinate, pixel) { quickCoordinate = coordinate; const menu = $("quick-menu"); const [width, height] = map.getSize(); const menuWidth = 228; const menuHeight = 116; const gap = 24; const left = pixel[0] + gap + menuWidth <= width ? pixel[0] + gap : Math.max(8, pixel[0] - menuWidth - gap); const top = pixel[1] + gap + menuHeight <= height ? pixel[1] + gap : Math.max(62, pixel[1] - menuHeight - gap); menu.style.left = `${left}px`; menu.style.top = `${top}px`; menu.hidden = false; }
+const quickSymbolsButton = document.querySelector('[data-quick="landing"]');
+quickSymbolsButton.dataset.quick = "symbols";
+quickSymbolsButton.textContent = "Symboler";
+const quickSymbolMenu = document.createElement("div");
+quickSymbolMenu.id = "quick-symbol-menu";
+quickSymbolMenu.className = "quick-symbol-menu";
+quickSymbolMenu.hidden = true;
+quickSymbolMenu.innerHTML = '<button id="quick-symbol-back" type="button">Tilbake</button><button data-quick="text-bubble" type="button">Tekstboks</button><button data-quick="arrow-left" type="button">Gul pil ←</button><button data-quick="arrow-right" type="button">Gul pil →</button><button data-quick="landing" type="button">Velteplass</button><button data-quick="turning" type="button">Snuplass</button>';
+$("quick-menu").append(quickSymbolMenu);
+function showQuickMainMenu() { quickSymbolMenu.hidden = true; document.querySelectorAll('#quick-menu > button[data-quick]').forEach((button) => { button.hidden = false; }); }
+function showQuickSymbolMenu() { document.querySelectorAll('#quick-menu > button[data-quick]').forEach((button) => { button.hidden = true; }); quickSymbolMenu.hidden = false; }
+function hideQuickMenu() { $("quick-menu").hidden = true; showQuickMainMenu(); }
+function openQuickMenu(coordinate, pixel) { quickCoordinate = coordinate; showQuickMainMenu(); const menu = $("quick-menu"); const [width, height] = map.getSize(); const menuWidth = 228; const menuHeight = 164; const gap = 24; const left = pixel[0] + gap + menuWidth <= width ? pixel[0] + gap : Math.max(8, pixel[0] - menuWidth - gap); const top = pixel[1] + gap + menuHeight <= height ? pixel[1] + gap : Math.max(62, pixel[1] - menuHeight - gap); menu.style.left = `${left}px`; menu.style.top = `${top}px`; menu.hidden = false; }
 function closeQuickMenuOutside(event) { if (!(event.target instanceof Element) || !event.target.closest("#quick-menu")) hideQuickMenu(); }
 ["pointerdown", "touchstart", "mousedown"].forEach((type) => document.addEventListener(type, closeQuickMenuOutside, true));
 function addQuickNote() {
@@ -224,6 +235,8 @@ function addQuickNote() {
 document.querySelectorAll("[data-quick]").forEach((button) => button.addEventListener("click", () => {
   if (!quickCoordinate) return;
   const kind = button.dataset.quick;
+  if (kind === "symbols") { showQuickSymbolMenu(); return; }
+  if (kind === "text-bubble") { hideQuickMenu(); activateTextBubble(); return; }
   if (kind === "note") { addQuickNote(); return; }
   if (kind === "photo") { quickPhotoCoordinate = quickCoordinate; hideQuickMenu(); $("photo-input").click(); return; }
   pendingSymbol = { type: kind };
@@ -231,6 +244,7 @@ document.querySelectorAll("[data-quick]").forEach((button) => button.addEventLis
   addSymbol(quickCoordinate);
   hideQuickMenu();
 }));
+$("quick-symbol-back").addEventListener("click", showQuickMainMenu);
 map.getViewport().addEventListener("pointerdown", (event) => { hideQuickMenu(); if (toolMode) return; const pixel = map.getEventPixel(event); longPressTimer = setTimeout(() => { ignoreSingleClickUntil = Date.now() + 700; openQuickMenu(map.getCoordinateFromPixel(pixel), pixel); }, 620); });
 ["pointerup", "pointermove", "pointercancel"].forEach((type) => map.getViewport().addEventListener(type, () => clearTimeout(longPressTimer)));
 map.getViewport().addEventListener("contextmenu", (event) => event.preventDefault());
