@@ -310,13 +310,18 @@ $("export-button").addEventListener("click", exportJpeg);
 $("export-project").addEventListener("click", exportProject);
 $("project-input").addEventListener("change", async (event) => { const file = event.target.files?.[0]; if (file) await importProject(file); event.target.value = ""; });
 renderProjectPicker();
+const projectTransfer = document.querySelector(".project-transfer");
+$("export-project-content").append($("export-project"));
+$("project-import-content").append(document.querySelector('label[for="project-input"]'), $("project-input"));
+projectTransfer.remove();
 const rightTools = document.querySelector(".right-panel");
 $("draw-menu-content").append(rightTools.querySelector(".tool-grid"), rightTools.querySelector('label[for="draw-color"]'), $("draw-color"));
 $("cancel-tool").remove();
 rightTools.hidden = true;
-function toggleTopMenu(toggleId, menuId) { $(toggleId).addEventListener("click", () => { const open = $(menuId).hidden; ["draw-menu"].forEach((id) => { $(id).hidden = true; }); $(menuId).hidden = !open; $(toggleId).setAttribute("aria-expanded", String(open)); }); }
+function toggleTopMenu(toggleId, menuId) { $(toggleId).addEventListener("click", () => { const open = $(menuId).hidden; ["draw-menu", "export-menu"].forEach((id) => { $(id).hidden = true; }); $(menuId).hidden = !open; $(toggleId).setAttribute("aria-expanded", String(open)); }); }
 toggleTopMenu("draw-menu-toggle", "draw-menu");
-document.addEventListener("pointerdown", (event) => { if (event.target instanceof Element && !event.target.closest(".top-tool")) ["draw-menu"].forEach((id) => { $(id).hidden = true; }); }, true);
+toggleTopMenu("export-menu-toggle", "export-menu");
+document.addEventListener("pointerdown", (event) => { if (event.target instanceof Element && !event.target.closest(".top-tool")) ["draw-menu", "export-menu"].forEach((id) => { $(id).hidden = true; }); }, true);
 $("save-position-now").addEventListener("click", saveQuickPosition);
 $("track-direct").addEventListener("click", () => { if (trackWatch) stopTrack(); else startTrack(); });
 function initialisePanels() {
