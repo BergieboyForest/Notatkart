@@ -229,7 +229,7 @@ document.querySelectorAll("[data-quick]").forEach((button) => button.addEventLis
   addSymbol(quickCoordinate);
   hideQuickMenu();
 }));
-map.getViewport().addEventListener("pointerdown", (event) => { if (toolMode) return; const pixel = map.getEventPixel(event); longPressTimer = setTimeout(() => { ignoreSingleClickUntil = Date.now() + 700; openQuickMenu(map.getCoordinateFromPixel(pixel), pixel); }, 620); });
+map.getViewport().addEventListener("pointerdown", (event) => { hideQuickMenu(); if (toolMode) return; const pixel = map.getEventPixel(event); longPressTimer = setTimeout(() => { ignoreSingleClickUntil = Date.now() + 700; openQuickMenu(map.getCoordinateFromPixel(pixel), pixel); }, 620); });
 ["pointerup", "pointermove", "pointercancel"].forEach((type) => map.getViewport().addEventListener(type, () => clearTimeout(longPressTimer)));
 map.getViewport().addEventListener("contextmenu", (event) => event.preventDefault());
 function hideDetail() { selectedFeature = null; $("detail-card").hidden = true; $("detail-photo").src = ""; $("detail-link").hidden = true; $("symbol-editor").hidden = true; $("text-editor").hidden = true; }
