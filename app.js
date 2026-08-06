@@ -307,6 +307,14 @@ $("export-button").addEventListener("click", exportJpeg);
 $("export-project").addEventListener("click", exportProject);
 $("project-input").addEventListener("change", async (event) => { const file = event.target.files?.[0]; if (file) await importProject(file); event.target.value = ""; });
 renderProjectPicker();
+const rightTools = document.querySelector(".right-panel");
+$("draw-menu-content").append(rightTools.querySelector(".tool-grid"), rightTools.querySelector('label[for="draw-color"]'), $("draw-color"));
+$("field-menu-content").append($("position-toggle"), $("position-content"), $("track-toggle"), $("track-content"), $("cancel-tool"));
+rightTools.hidden = true;
+function toggleTopMenu(toggleId, menuId) { $(toggleId).addEventListener("click", () => { const open = $(menuId).hidden; ["draw-menu", "field-menu"].forEach((id) => { $(id).hidden = true; }); $(menuId).hidden = !open; $(toggleId).setAttribute("aria-expanded", String(open)); }); }
+toggleTopMenu("draw-menu-toggle", "draw-menu");
+toggleTopMenu("field-menu-toggle", "field-menu");
+document.addEventListener("pointerdown", (event) => { if (event.target instanceof Element && !event.target.closest(".top-tool")) ["draw-menu", "field-menu"].forEach((id) => { $(id).hidden = true; }); }, true);
 function initialisePanels() {
   const panels = [...document.querySelectorAll(".panel")];
   const setCollapsed = (panel, collapsed) => { const button = panel.querySelector(".panel-toggle"); panel.classList.toggle("collapsed", collapsed); button.setAttribute("aria-expanded", String(!collapsed)); button.setAttribute("aria-label", `${collapsed ? "Åpne" : "Lukk"} ${panel.classList.contains("left-panel") ? "kartlag" : "verktøy"}`); setTimeout(() => map.updateSize(), 190); };
