@@ -13,6 +13,7 @@ const importSource = new ol.source.Vector();
 const positionSource = new ol.source.Vector();
 const format = new ol.format.GeoJSON();
 let drawInteraction;
+let activeDrawColor = "#dc6f45";
 let modifyInteraction;
 let toolMode = null;
 let selectedFeature = null;
@@ -201,7 +202,8 @@ async function importGeoPdfFile(file) {
 }
 function worldCorners(values, width, height, dataProjection) { const [a, d, b, e, c, f] = values; const coordinate = (column, row) => ol.proj.transform([a * column + b * row + c, d * column + e * row + f], dataProjection, projection); return [coordinate(-0.5, -0.5), coordinate(width - 0.5, -0.5), coordinate(width - 0.5, height - 0.5), coordinate(-0.5, height - 0.5), coordinate(-0.5, -0.5)]; }
 function deactivateTool() { if (drawInteraction) { map.removeInteraction(drawInteraction); drawInteraction = null; } if (modifyInteraction) { map.removeInteraction(modifyInteraction); modifyInteraction = null; } toolMode = null; document.querySelectorAll("[data-draw]").forEach((button) => button.classList.remove("active")); $("map").style.cursor = ""; }
-function activateDraw(kind) { const color = kind === "Polygon" ? "#dc6f45" : $("draw-color").value; hideQuickMenu(); deactivateTool(); toolMode = "draw"; document.querySelector(`[data-draw="${kind}"]`).classList.add("active"); drawInteraction = new ol.interaction.Draw({ source: drawingSource, type: kind === "freehand" ? "LineString" : kind, freehand: kind === "freehand", style: new ol.style.Style({ stroke: new ol.style.Stroke({ color, width: 4 }) }) }); drawInteraction.on("drawend", (event) => { event.feature.setProperties({ id: uid(), noteType: "sketch", sketchKind: kind, styleColor: color, title: "Skisse", body: "", createdAt: new Date().toISOString() }); saveData(); deactivateTool(); hideQuickMenu(); toast("Skissen er lagret. Tekst kan legges til senere."); }); map.addInteraction(drawInteraction); toast(kind === "Polygon" ? "Tegn område og dobbelttrykk for å avslutte." : "Tegn i kartet. Dobbelttrykk for å avslutte."); }
+function drawPreviewStyle(color) { return new ol.style.Style({ stroke: new ol.style.Stroke({ color, width: 4 }), fill: new ol.style.Fill({ color: `${color}33` }) }); }
+function activateDraw(kind) { activeDrawColor = $("draw-color").value; hideQuickMenu(); deactivateTool(); toolMode = "draw"; document.querySelector(`[data-draw="${kind}"]`).classList.add("active"); drawInteraction = new ol.interaction.Draw({ source: drawingSource, type: kind === "freehand" ? "LineString" : kind, freehand: kind === "freehand", style: drawPreviewStyle(activeDrawColor) }); drawInteraction.on("drawend", (event) => { event.feature.setProperties({ id: uid(), noteType: "sketch", sketchKind: kind, styleColor: activeDrawColor, title: "Skisse", body: "", createdAt: new Date().toISOString() }); saveData(); deactivateTool(); hideQuickMenu(); toast("Skissen er lagret. Tekst kan legges til senere."); }); map.addInteraction(drawInteraction); toast(kind === "Polygon" ? "Tegn område og dobbelttrykk for å avslutte." : "Tegn i kartet. Dobbelttrykk for å avslutte."); }
 function selectPlacement(kind) { hideQuickMenu(); deactivateTool(); toolMode = kind; $("map").style.cursor = "crosshair"; const messages = { text: "Trykk i kartet der tekstboksen skal plasseres.", photo: "Trykk i kartet der bildet hører til.", symbol: `Trykk i kartet der ${symbolNames[pendingSymbol?.type]?.toLowerCase() || "symbolet"} skal plasseres.` }; toast(messages[kind]); }
 async function addPhoto(coordinate) { const id = uid(); try { await savePhoto(id, pendingPhoto); notesSource.addFeature(new ol.Feature({ geometry: new ol.geom.Point(coordinate), id: uid(), noteType: "photo", photoId: id, title: pendingPhoto.name || "Bilde", createdAt: new Date().toISOString() })); pendingPhoto = null; $("photo-name").textContent = "Ingen bilde valgt."; $("place-photo").disabled = true; saveData(); toast("Bildet er lagret på kartpunktet."); } catch { toast("Bildet kunne ikke lagres lokalt."); } }
 function addText(coordinate) { const body = $("note-text").value.trim(); const title = $("note-title").value.trim(); if (!body && !title) { toast("Skriv litt tekst før du plasserer notatet."); return; } notesSource.addFeature(new ol.Feature({ geometry: new ol.geom.Point(coordinate), id: uid(), noteType: "text", title: title || "Notat", body, createdAt: new Date().toISOString() })); $("note-title").value = ""; $("note-text").value = ""; saveData(); toast("Tekstboksen er lagret på kartpunktet."); }
@@ -266,6 +268,7 @@ async function showDetail(feature) { selectedFeature = feature; const type = fea
 $("delete-object").addEventListener("click", async () => { if (!selectedFeature) return; if (!confirm("Slette dette objektet fra Notatkart?")) return; const photoId = selectedFeature.get("photoId"); [notesSource, drawingSource].forEach((source) => source.removeFeature(selectedFeature)); if (photoId) await deletePhoto(photoId); saveData(); hideDetail(); toast("Objektet er slettet."); });
 $("close-detail").addEventListener("click", hideDetail);
 document.querySelectorAll("[data-draw]").forEach((button) => button.addEventListener("click", () => activateDraw(button.dataset.draw)));
+$("draw-color").addEventListener("change", (event) => { activeDrawColor = event.target.value; if (drawInteraction && toolMode === "draw") drawInteraction.setStyle(drawPreviewStyle(activeDrawColor)); });
 $("cancel-tool").addEventListener("click", () => { deactivateTool(); hideQuickMenu(); toast("Aktivt verktøy er avsluttet."); });
 $("place-text").addEventListener("click", activateTextBubble);
 $("symbol-toggle").addEventListener("click", () => { const open = $("symbol-content").hidden; $("symbol-content").hidden = !open; $("symbol-toggle").setAttribute("aria-expanded", String(open)); });
@@ -309,12 +312,15 @@ $("project-input").addEventListener("change", async (event) => { const file = ev
 renderProjectPicker();
 const rightTools = document.querySelector(".right-panel");
 $("draw-menu-content").append(rightTools.querySelector(".tool-grid"), rightTools.querySelector('label[for="draw-color"]'), $("draw-color"));
-$("field-menu-content").append($("position-toggle"), $("position-content"), $("track-toggle"), $("track-content"), $("cancel-tool"));
+$("position-menu-content").append($("position-toggle"), $("position-content"));
+$("track-menu-content").append($("track-toggle"), $("track-content"));
+$("cancel-tool").remove();
 rightTools.hidden = true;
-function toggleTopMenu(toggleId, menuId) { $(toggleId).addEventListener("click", () => { const open = $(menuId).hidden; ["draw-menu", "field-menu"].forEach((id) => { $(id).hidden = true; }); $(menuId).hidden = !open; $(toggleId).setAttribute("aria-expanded", String(open)); }); }
+function toggleTopMenu(toggleId, menuId) { $(toggleId).addEventListener("click", () => { const open = $(menuId).hidden; ["draw-menu", "position-menu", "track-menu"].forEach((id) => { $(id).hidden = true; }); $(menuId).hidden = !open; $(toggleId).setAttribute("aria-expanded", String(open)); }); }
 toggleTopMenu("draw-menu-toggle", "draw-menu");
-toggleTopMenu("field-menu-toggle", "field-menu");
-document.addEventListener("pointerdown", (event) => { if (event.target instanceof Element && !event.target.closest(".top-tool")) ["draw-menu", "field-menu"].forEach((id) => { $(id).hidden = true; }); }, true);
+toggleTopMenu("position-menu-toggle", "position-menu");
+toggleTopMenu("track-menu-toggle", "track-menu");
+document.addEventListener("pointerdown", (event) => { if (event.target instanceof Element && !event.target.closest(".top-tool")) ["draw-menu", "position-menu", "track-menu"].forEach((id) => { $(id).hidden = true; }); }, true);
 function initialisePanels() {
   const panels = [...document.querySelectorAll(".panel")];
   const setCollapsed = (panel, collapsed) => { const button = panel.querySelector(".panel-toggle"); panel.classList.toggle("collapsed", collapsed); button.setAttribute("aria-expanded", String(!collapsed)); button.setAttribute("aria-label", `${collapsed ? "Åpne" : "Lukk"} ${panel.classList.contains("left-panel") ? "kartlag" : "verktøy"}`); setTimeout(() => map.updateSize(), 190); };
