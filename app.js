@@ -445,7 +445,7 @@ function startTrack() {
     else trackFeature.getGeometry().setCoordinates(trackCoordinates);
     updateTrackStatus();
   }, () => { stopTrack(); gpsError(); }, { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
-  toast("Sporlogg startet. Den lagres når du stopper den.");
+  updateTrackStatus(); toast("Sporlogg startet. Den lagres når du stopper den.");
 }
 
 $("save-position").addEventListener("click", saveCurrentPosition);
