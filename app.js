@@ -20,6 +20,7 @@ let pendingPhoto = null;
 let pendingSymbol = null;
 let quickCoordinate = null;
 let quickPhotoCoordinate = null;
+let quickCulvertCoordinate = null;
 let longPressTimer;
 let ignoreSingleClickUntil = 0;
 let positionWatch;
@@ -220,9 +221,17 @@ quickSymbolMenu.className = "quick-symbol-menu";
 quickSymbolMenu.hidden = true;
 quickSymbolMenu.innerHTML = '<button id="quick-symbol-back" type="button">Tilbake</button><button data-quick="text-bubble" type="button">Tekstboks</button><button data-quick="arrow-left" type="button">Gul pil ←</button><button data-quick="arrow-right" type="button">Gul pil →</button><button data-quick="landing" type="button">Velteplass</button><button data-quick="turning" type="button">Snuplass</button>';
 $("quick-menu").append(quickSymbolMenu);
+const quickCulvertDialog = document.createElement("div");
+quickCulvertDialog.id = "quick-culvert-dialog";
+quickCulvertDialog.className = "quick-culvert-dialog";
+quickCulvertDialog.hidden = true;
+quickCulvertDialog.innerHTML = '<label for="quick-culvert-text">Stikkrenne <span>diameter (valgfritt)</span></label><input id="quick-culvert-text" type="text" inputmode="text" placeholder="For eksempel Ø 600 mm"><div><button id="cancel-quick-culvert" type="button">Avbryt</button><button id="place-quick-culvert" class="primary" type="button">Plasser</button></div>';
+document.querySelector(".map-area").append(quickCulvertDialog);
 function showQuickMainMenu() { quickSymbolMenu.hidden = true; document.querySelectorAll('#quick-menu > button[data-quick]').forEach((button) => { button.hidden = false; }); }
 function showQuickSymbolMenu() { document.querySelectorAll('#quick-menu > button[data-quick]').forEach((button) => { button.hidden = true; }); quickSymbolMenu.hidden = false; }
 function hideQuickMenu() { $("quick-menu").hidden = true; showQuickMainMenu(); }
+function hideQuickCulvertDialog() { quickCulvertDialog.hidden = true; quickCulvertCoordinate = null; }
+function showQuickCulvertDialog() { quickCulvertCoordinate = quickCoordinate; hideQuickMenu(); const pixel = map.getPixelFromCoordinate(quickCoordinate); const [width, height] = map.getSize(); const dialogWidth = 246; const dialogHeight = 112; const gap = 24; const left = pixel[0] + gap + dialogWidth <= width ? pixel[0] + gap : Math.max(8, pixel[0] - dialogWidth - gap); const top = pixel[1] + gap + dialogHeight <= height ? pixel[1] + gap : Math.max(62, pixel[1] - dialogHeight - gap); quickCulvertDialog.style.left = `${left}px`; quickCulvertDialog.style.top = `${top}px`; quickCulvertDialog.hidden = false; $("quick-culvert-text").value = ""; requestAnimationFrame(() => $("quick-culvert-text").focus()); }
 function openQuickMenu(coordinate, pixel) { quickCoordinate = coordinate; showQuickMainMenu(); const menu = $("quick-menu"); const [width, height] = map.getSize(); const menuWidth = 228; const menuHeight = 164; const gap = 24; const left = pixel[0] + gap + menuWidth <= width ? pixel[0] + gap : Math.max(8, pixel[0] - menuWidth - gap); const top = pixel[1] + gap + menuHeight <= height ? pixel[1] + gap : Math.max(62, pixel[1] - menuHeight - gap); menu.style.left = `${left}px`; menu.style.top = `${top}px`; menu.hidden = false; }
 function closeQuickMenuOutside(event) { if (!(event.target instanceof Element) || !event.target.closest("#quick-menu")) hideQuickMenu(); }
 ["pointerdown", "touchstart", "mousedown"].forEach((type) => document.addEventListener(type, closeQuickMenuOutside, true));
@@ -237,6 +246,7 @@ document.querySelectorAll("[data-quick]").forEach((button) => button.addEventLis
   const kind = button.dataset.quick;
   if (kind === "symbols") { showQuickSymbolMenu(); return; }
   if (kind === "text-bubble") { hideQuickMenu(); activateTextBubble(); return; }
+  if (kind === "culvert") { showQuickCulvertDialog(); return; }
   if (kind === "note") { addQuickNote(); return; }
   if (kind === "photo") { quickPhotoCoordinate = quickCoordinate; hideQuickMenu(); $("photo-input").click(); return; }
   pendingSymbol = { type: kind };
@@ -245,6 +255,9 @@ document.querySelectorAll("[data-quick]").forEach((button) => button.addEventLis
   hideQuickMenu();
 }));
 $("quick-symbol-back").addEventListener("click", showQuickMainMenu);
+$("cancel-quick-culvert").addEventListener("click", hideQuickCulvertDialog);
+$("place-quick-culvert").addEventListener("click", () => { if (!quickCulvertCoordinate) return; pendingSymbol = { type: "culvert" }; $("symbol-text").value = $("quick-culvert-text").value.trim(); addSymbol(quickCulvertCoordinate); hideQuickCulvertDialog(); });
+$("quick-culvert-text").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); $("place-quick-culvert").click(); } });
 map.getViewport().addEventListener("pointerdown", (event) => { hideQuickMenu(); if (toolMode) return; const pixel = map.getEventPixel(event); longPressTimer = setTimeout(() => { ignoreSingleClickUntil = Date.now() + 700; openQuickMenu(map.getCoordinateFromPixel(pixel), pixel); }, 620); });
 ["pointerup", "pointermove", "pointercancel"].forEach((type) => map.getViewport().addEventListener(type, () => clearTimeout(longPressTimer)));
 map.getViewport().addEventListener("contextmenu", (event) => event.preventDefault());
