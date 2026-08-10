@@ -3,10 +3,16 @@ const APP_KEY = "notatkart:data:v1";
 const VISIBILITY_KEY = "notatkart:layer-visibility:v1";
 const PROJECT_INDEX_KEY = "notatkart:projects:v1";
 const ACTIVE_PROJECT_KEY = "notatkart:active-project:v1";
+const VEGPLANLEGGER_CONNECTION_KEY = "notatkart:vegplanlegger-connection:v1";
 const PHOTO_DB = "notatkart-photos";
 const PHOTO_STORE = "photos";
 const projection = "EPSG:3857";
 const $ = (id) => document.getElementById(id);
+const APP_VERSION = "86";
+const projectMenuVersion = document.createElement("p");
+projectMenuVersion.className = "app-version";
+projectMenuVersion.textContent = `Notatkart versjon ${APP_VERSION}`;
+$("project-import-content")?.before(projectMenuVersion);
 const drawingSource = new ol.source.Vector();
 const notesSource = new ol.source.Vector();
 const importSource = new ol.source.Vector();
@@ -53,10 +59,31 @@ function initialiseProjects() {
 const projectState = initialiseProjects();
 let activeProjectId = projectState.activeId;
 let groupVisibility = JSON.parse(localStorage.getItem(projectVisibilityKey(activeProjectId)) || "{}");
+let fieldConnection = readFieldConnection(activeProjectId);
+let fieldSyncTimer;
+let fieldProfile = null;
+let fieldRoute = null;
+let groundSegmentStart = null;
+let groundManualMode = false;
+let groundManualGroup = null;
+const fieldProfileView = { zoom: 1, center: null };
+let fieldProfilePan = null;
 
 function uid() { return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
+function fieldConnectionKey(id) { return `${VEGPLANLEGGER_CONNECTION_KEY}:project:${id}`; }
+function readFieldConnection(id) { try { return JSON.parse(localStorage.getItem(fieldConnectionKey(id)) || "null"); } catch { return null; } }
+function writeFieldConnection(id, connection) { localStorage.setItem(fieldConnectionKey(id), JSON.stringify(connection)); }
 function toast(message) { const el = $("toast"); el.textContent = message; el.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 3600); }
 const symbolNames = { culvert: "Stikkrenne", landing: "Velteplass", turning: "Snuplass", "arrow-left": "Gul pil venstre", "arrow-right": "Gul pil høyre" };
+const groundGroups = [
+  { code: "2", short: "Gruppe 2", label: "Velgradert grus og sand / grusig sandig materiale", color: "#2f7ed8" },
+  { code: "3", short: "Gruppe 3", label: "Ensgradert sand", color: "#e6a700" },
+  { code: "4", short: "Gruppe 4", label: "Grus, sand og morene – lite finstoff", color: "#648c3a" },
+  { code: "5", short: "Gruppe 5", label: "Grus, sand og morene – mye finstoff", color: "#9a5d2e" },
+  { code: "6", short: "Gruppe 6", label: "Silt og leire", color: "#8266a8" },
+  { code: "myr", short: "Myr", label: "Myr (bløt silt/leire og torvmark)", color: "#3d8c78" }
+];
+function groundGroup(code) { return groundGroups.find((group) => group.code === String(code)) || groundGroups[0]; }
 const svgIcon = (svg) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 const symbolIcons = {
   culvert: svgIcon(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#9bdcff"/><stop offset=".48" stop-color="#247fbd"/><stop offset="1" stop-color="#075082"/></linearGradient></defs><path d="M14 19h32v27H14z" fill="url(#b)" stroke="#064a78" stroke-width="3"/><ellipse cx="14" cy="32.5" rx="8" ry="14" fill="#8ed8ff" stroke="#064a78" stroke-width="3"/><ellipse cx="14" cy="32.5" rx="4" ry="9" fill="#163f5a"/><ellipse cx="46" cy="32.5" rx="8" ry="14" fill="#12679d" stroke="#064a78" stroke-width="3"/><path d="M20 22h20" stroke="#d7f3ff" stroke-width="3" opacity=".7"/></svg>`),
@@ -86,6 +113,15 @@ function localFeatureStyle(feature, resolution) {
   const scaleDenominator = ol.proj.getPointResolution(projection, resolution, map.getView().getCenter(), "m") * (96 / .0254);
   if (scaleDenominator >= 10000) return null;
   const type = feature.get("noteType");
+  if (type === "ground") {
+    const group = groundGroup(feature.get("groundGroup"));
+    const from = Math.round(Number(feature.get("stationFrom")) || 0);
+    const to = Math.round(Number(feature.get("stationTo")) || 0);
+    return new ol.style.Style({
+      stroke: new ol.style.Stroke({ color: group.color, width: 9, lineCap: "round", lineJoin: "round" }),
+      text: new ol.style.Text({ text: resolution <= 3 ? `${group.short}  P ${from}–${to}` : "", placement: "line", overflow: true, font: "800 13px system-ui", fill: new ol.style.Fill({ color: group.color }), stroke: new ol.style.Stroke({ color: "#fff", width: 4 }) })
+    });
+  }
   if (type === "symbol") {
     return scaleSymbolStyles(mapSymbolStyle(feature), scaleDenominator >= 3000 ? .5 : 1);
     const symbolType = feature.get("symbolType");
@@ -126,19 +162,301 @@ function updateMapScale() { const view = map.getView(); const resolution = view.
 map.getView().on("change:resolution", updateMapScale); map.getView().on("change:center", updateMapScale); map.once("rendercomplete", updateMapScale);
 
 function appendLayerRow(container, label, count, key) { const row = document.createElement("label"); const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.setAttribute("aria-label", `${label} (${count})`); checkbox.checked = groupIsVisible(key); checkbox.addEventListener("change", () => setGroupVisibility(key, checkbox.checked)); const text = document.createElement("span"); text.textContent = label; const amount = document.createElement("small"); amount.textContent = `${count}`; row.append(checkbox, text, amount); container.append(row); }
-function refreshLayerMenus() { const importList = $("import-list"); const importedGroups = new Map(); importSource.getFeatures().forEach((feature) => { const name = feature.get("sourceName") || "Importerte data"; importedGroups.set(name, (importedGroups.get(name) || 0) + 1); }); importList.replaceChildren(); if (importedGroups.size) importedGroups.forEach((count, name) => appendLayerRow(importList, name, count, `import:${name}`)); else importList.textContent = "Ingen importerte data ennå."; const notesList = $("notes-list"); const noteGroups = new Map(); [...drawingSource.getFeatures(), ...notesSource.getFeatures()].forEach((feature) => { const key = noteKey(feature); noteGroups.set(key, (noteGroups.get(key) || 0) + 1); }); const groups = [{ key: "note:sketch", label: "Skisser" }, { key: "note:text", label: "Tekstnotater" }, { key: "note:photo", label: "Bilder" }, { key: "symbol:culvert", label: "Stikkrenner" }, { key: "symbol:landing", label: "Velteplasser" }, { key: "symbol:turning", label: "Snuplasser" }, { key: "symbol:arrow-left", label: "Gule piler mot venstre" }, { key: "symbol:arrow-right", label: "Gule piler mot høyre" }]; notesList.replaceChildren(); groups.forEach((group) => appendLayerRow(notesList, group.label, noteGroups.get(group.key) || 0, group.key)); }
+function refreshLayerMenus() { const importList = $("import-list"); const importedGroups = new Map(); importSource.getFeatures().forEach((feature) => { const name = feature.get("sourceName") || "Importerte data"; importedGroups.set(name, (importedGroups.get(name) || 0) + 1); }); importList.replaceChildren(); if (importedGroups.size) importedGroups.forEach((count, name) => appendLayerRow(importList, name, count, `import:${name}`)); else importList.textContent = "Ingen importerte data ennå."; const notesList = $("notes-list"); const noteGroups = new Map(); [...drawingSource.getFeatures(), ...notesSource.getFeatures()].forEach((feature) => { const key = noteKey(feature); noteGroups.set(key, (noteGroups.get(key) || 0) + 1); }); const groups = [{ key: "note:ground", label: "Grunnforhold" }, { key: "note:sketch", label: "Skisser" }, { key: "note:text", label: "Tekstnotater" }, { key: "note:photo", label: "Bilder" }, { key: "symbol:culvert", label: "Stikkrenner" }, { key: "symbol:landing", label: "Velteplasser" }, { key: "symbol:turning", label: "Snuplasser" }, { key: "symbol:arrow-left", label: "Gule piler mot venstre" }, { key: "symbol:arrow-right", label: "Gule piler mot høyre" }]; notesList.replaceChildren(); groups.forEach((group) => appendLayerRow(notesList, group.label, noteGroups.get(group.key) || 0, group.key)); }
 function countObjects() { const importedDatasets = new Set(importSource.getFeatures().map((feature) => feature.get("sourceName") || "Importerte data")).size; $("import-count").textContent = `${importedDatasets} datasett`; const noteObjects = drawingSource.getFeatures().length + notesSource.getFeatures().length; $("note-count").textContent = `${noteObjects} objekt${noteObjects === 1 ? "" : "er"}`; refreshLayerMenus(); }
 function serialise(source) { const images = source.getFeatures().map((feature) => [feature, feature.get("image")]); images.forEach(([feature, image]) => { if (image) feature.unset("image", true); }); const data = format.writeFeaturesObject(source.getFeatures(), { featureProjection: projection, dataProjection: projection }); images.forEach(([feature, image]) => { if (image) feature.set("image", image, true); }); return data; }
 function readInto(source, data) { if (data?.features) source.addFeatures(format.readFeatures(data, { featureProjection: projection, dataProjection: projection })); }
-function saveData() { localStorage.setItem(projectDataKey(activeProjectId), JSON.stringify({ drawings: serialise(drawingSource), notes: serialise(notesSource), imports: serialise(importSource) })); countObjects(); }
+function fieldPayload() { return { version: 1, data: { drawings: serialise(drawingSource), notes: serialise(notesSource) } }; }
+function normaliseServerUrl(value) {
+  const raw = String(value || "").trim();
+  try { return new URL(raw).origin; }
+  catch { return raw.replace(/\/notatkart\/?$/i, "").replace(/\/$/, ""); }
+}
+function updateFieldSyncUi(message, state = "") {
+  const panel = document.querySelector(".vegplanlegger-connect");
+  if (!panel) return;
+  panel.dataset.state = state;
+  $("vegplanlegger-sync-status").textContent = message;
+  $("sync-vegplanlegger").hidden = !fieldConnection;
+  if (fieldConnection) {
+    $("vegplanlegger-server").value = fieldConnection.serverUrl;
+    $("vegplanlegger-code").value = fieldConnection.projectCode || `${fieldConnection.projectId}.${fieldConnection.accessKey}`;
+  }
+}
+async function fieldServerRequest(path, options = {}) {
+  if (!fieldConnection) throw new Error("Dette Notatkart-prosjektet er ikke koblet til Vegplanlegger.");
+  const headers = { "X-Project-Key": fieldConnection.accessKey, ...(options.headers || {}) };
+  if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const response = await fetch(`${fieldConnection.serverUrl}${path}`, { ...options, headers });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `Vegplanlegger svarte med ${response.status}.`);
+  return payload;
+}
+async function fieldServerBlob(path) {
+  if (!fieldConnection) throw new Error("Dette Notatkart-prosjektet er ikke koblet til Vegplanlegger.");
+  const response = await fetch(`${fieldConnection.serverUrl}${path}`, { headers: { "X-Project-Key": fieldConnection.accessKey } });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || `Vegplanlegger svarte med ${response.status}.`);
+  }
+  return response.blob();
+}
+function scheduleFieldSync() {
+  if (!fieldConnection) return;
+  clearTimeout(fieldSyncTimer);
+  updateFieldSyncUi("Endringer lagret på iPad. Synkroniserer når nettet er tilgjengelig …", "pending");
+  fieldSyncTimer = setTimeout(() => syncFieldNotes({ quiet: true }), 1000);
+}
+async function syncFieldNotes({ quiet = false } = {}) {
+  if (!fieldConnection) return;
+  try {
+    const result = await fieldServerRequest(`/api/projects/${encodeURIComponent(fieldConnection.projectId)}/field-notes`, { method: "PUT", body: JSON.stringify(fieldPayload()) });
+    const time = result.updatedAt ? new Date(result.updatedAt).toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" }) : "nå";
+    updateFieldSyncUi(`Synkronisert med Vegplanlegger ${time}.`, "ready");
+    if (!quiet) toast("Befaringnotatene er synkronisert.");
+  } catch (error) {
+    console.warn("Synkronisering venter på nett.", error);
+    updateFieldSyncUi("Endringer er lagret på iPad og venter på synkronisering.", "pending");
+    if (!quiet) toast("Fikk ikke kontakt med Vegplanlegger. Notatene er likevel lagret lokalt.");
+  }
+}
+async function syncFieldMaps({ quiet = false } = {}) {
+  if (!fieldConnection) return;
+  try {
+    const result = await fieldServerRequest(`/api/projects/${encodeURIComponent(fieldConnection.projectId)}/field-maps`);
+    let maps = Array.isArray(result.maps) ? result.maps : [];
+    // En prosjektmappe kan inneholde gamle Avenza-eksporter ved siden av den
+    // nyeste serien fra Vegplanlegger. Bruk alltid den sist oppdaterte, nummererte
+    // ZIP-serien (navn_001.zip, navn_002.zip osv.) i stedet for å legge begge oppå.
+    const numberedGroups = new Map();
+    maps.forEach((mapFile) => {
+      const match = /^(.*)_\d+\.zip$/i.exec(mapFile.name || "");
+      if (!match) return;
+      const group = match[1]; if (!numberedGroups.has(group)) numberedGroups.set(group, []);
+      numberedGroups.get(group).push(mapFile);
+    });
+    if (numberedGroups.size) {
+      const [latestGroup, latestMaps] = [...numberedGroups.entries()].sort((first, second) => {
+        const firstTime = Math.max(...first[1].map((mapFile) => Date.parse(mapFile.modifiedAt) || 0));
+        const secondTime = Math.max(...second[1].map((mapFile) => Date.parse(mapFile.modifiedAt) || 0));
+        return secondTime - firstTime;
+      })[0];
+      const groupedNames = new Set([...numberedGroups.values()].flat().map((mapFile) => mapFile.name));
+      maps = [...latestMaps, ...maps.filter((mapFile) => !groupedNames.has(mapFile.name))];
+      if (!quiet && numberedGroups.size > 1) updateFieldSyncUi(`Bruker nyeste kartserie: ${latestGroup}.`, "pending");
+    }
+    if (!maps.length) {
+      if (!quiet) toast("Fant ingen kartpakker i 03-befaring\\kart.");
+      return;
+    }
+    const activeMapNames = new Set(maps.map((mapFile) => mapFile.name));
+    let removed = 0;
+    importSource.getFeatures().filter((feature) => feature.get("fieldMapName") && !activeMapNames.has(feature.get("fieldMapName"))).forEach((feature) => { importSource.removeFeature(feature); removed += 1; });
+    let imported = 0;
+    for (let index = 0; index < maps.length; index += 1) {
+      const mapFile = maps[index];
+      const existing = importSource.getFeatures().filter((feature) => feature.get("fieldMapName") === mapFile.name || (feature.get("sourceName") === mapFile.name && !feature.get("fieldMapSignature")));
+      if (existing.some((feature) => feature.get("fieldMapSignature") === mapFile.signature)) continue;
+      updateFieldSyncUi(`Henter befaringkart ${index + 1} av ${maps.length} …`, "pending");
+      const blob = await fieldServerBlob(`/api/projects/${encodeURIComponent(fieldConnection.projectId)}/field-maps/${encodeURIComponent(mapFile.name)}`);
+      const file = new File([blob], mapFile.name, { type: blob.type || "application/zip" });
+      const before = new Set(importSource.getFeatures());
+      await importFile(file);
+      const added = importSource.getFeatures().filter((feature) => !before.has(feature));
+      added.forEach((feature) => feature.setProperties({ fieldMapName: mapFile.name, fieldMapSignature: mapFile.signature }, true));
+      existing.forEach((feature) => importSource.removeFeature(feature));
+      imported += added.length;
+    }
+    if (imported || removed) {
+      saveData();
+      map.getView().fit(importSource.getExtent(), { padding: [70, 280, 70, 280], maxZoom: 16, duration: 500 });
+      updateFieldSyncUi(`${imported} befaringkart er hentet fra Vegplanlegger.`, "ready");
+      if (!quiet) toast(`${imported || "Ingen nye"} befaringkart er klare offline på iPad.`);
+    } else if (!quiet) {
+      updateFieldSyncUi("Befaringkartene er allerede oppdatert på iPad.", "ready");
+      toast("Befaringkartene er allerede oppdatert.");
+    }
+  } catch (error) {
+    console.error(error);
+    updateFieldSyncUi(error.message || "Kunne ikke hente befaringkart.", "pending");
+    if (!quiet) toast("Kunne ikke hente befaringkart.");
+  }
+}
+function fieldProfileSamples() {
+  return Array.isArray(fieldProfile?.samples) ? fieldProfile.samples.filter((sample) => Number.isFinite(Number(sample?.station)) && Number.isFinite(Number(sample?.terrain)) && Number.isFinite(Number(sample?.design))) : [];
+}
+function profileViewport(samples) {
+  const first = Number(samples[0].station); const last = Number(samples.at(-1).station);
+  const total = Math.max(1, last - first); const visible = total / Math.max(1, fieldProfileView.zoom);
+  const center = Number.isFinite(fieldProfileView.center) ? fieldProfileView.center : first + total / 2;
+  const min = Math.max(first, Math.min(last - visible, center - visible / 2));
+  return { first, last, total, visible, min, max: Math.min(last, min + visible) };
+}
+function renderFieldProfile() {
+  const chart = $("field-profile-chart"); const panel = $("field-profile-panel"); const toggle = $("field-profile-toggle"); const status = $("field-profile-status");
+  if (!chart || !panel || !toggle || !status) return;
+  const samples = fieldProfileSamples();
+  if (!samples.length) { chart.innerHTML = ""; status.textContent = fieldConnection ? "Ingen ferdig vertikalgeometri i Vegplanlegger ennå." : "Koble prosjektet til Vegplanlegger for å hente profil."; return; }
+  panel.hidden = false; toggle.hidden = true;
+  const view = profileViewport(samples); const visible = samples.filter((sample) => Number(sample.station) >= view.min - .01 && Number(sample.station) <= view.max + .01);
+  const reduced = visible.filter((_, index) => index % Math.max(1, Math.ceil(visible.length / 650)) === 0 || index === visible.length - 1);
+  const values = reduced.flatMap((sample) => [Number(sample.terrain), Number(sample.design)]);
+  const minimum = Math.min(...values); const maximum = Math.max(...values); const range = Math.max(.5, maximum - minimum); const margin = Math.max(.35, range * .12);
+  const yMin = minimum - margin; const yMax = maximum + margin; const x0 = 54; const x1 = 880; const y0 = 18; const y1 = 211;
+  const x = (station) => x0 + ((Number(station) - view.min) / Math.max(.001, view.max - view.min)) * (x1 - x0);
+  const y = (elevation) => y1 - ((Number(elevation) - yMin) / Math.max(.001, yMax - yMin)) * (y1 - y0);
+  const path = (property) => reduced.map((sample, index) => `${index ? "L" : "M"}${x(sample.station).toFixed(1)} ${y(sample[property]).toFixed(1)}`).join(" ");
+  const interval = view.visible <= 80 ? 10 : view.visible <= 250 ? 25 : view.visible <= 800 ? 100 : 500;
+  const gridStart = Math.ceil(view.min / interval) * interval;
+  const grid = []; for (let station = gridStart; station < view.max; station += interval) grid.push(`<line x1="${x(station).toFixed(1)}" y1="${y0}" x2="${x(station).toFixed(1)}" y2="${y1}" stroke="#e5ebe3"/><text x="${x(station).toFixed(1)}" y="238" text-anchor="middle" fill="#5d7066" font-size="11">${Math.round(station)}</text>`);
+  const horizontal = [0, .25, .5, .75, 1].map((fraction) => { const elevation = yMin + (yMax - yMin) * fraction; const yy = y(elevation); return `<line x1="${x0}" y1="${yy.toFixed(1)}" x2="${x1}" y2="${yy.toFixed(1)}" stroke="#e5ebe3"/><text x="47" y="${(yy + 4).toFixed(1)}" text-anchor="end" fill="#5d7066" font-size="11">${elevation.toFixed(1)}</text>`; }).join("");
+  const profilePvis = Array.isArray(fieldProfile?.pvis) ? fieldProfile.pvis : [];
+  const designElevationAt = (station) => {
+    const after = samples.find((sample) => Number(sample.station) >= station);
+    if (!after) return Number(samples.at(-1).design);
+    const before = samples[Math.max(0, samples.indexOf(after) - 1)];
+    const fraction = (station - Number(before.station)) / Math.max(.001, Number(after.station) - Number(before.station));
+    return Number(before.design) + (Number(after.design) - Number(before.design)) * Math.max(0, Math.min(1, fraction));
+  };
+  // Samme prinsipp som Vegplanlegger: prosent vises bare på rettlinjede
+  // deler. Inne i en vertikalkurve er fallet variabelt og får ikke etikett.
+  const grades = profilePvis.slice(0, -1).map((from, index) => {
+    const to = profilePvis[index + 1];
+    const fromCurve = index > 0 ? Number(from.curveLength || 0) / 2 : 0;
+    const toCurve = index + 1 < profilePvis.length - 1 ? Number(to.curveLength || 0) / 2 : 0;
+    const linearStart = Number(from.station) + fromCurve; const linearEnd = Number(to.station) - toCurve;
+    if (linearEnd - linearStart < 4 || linearEnd < view.min || linearStart > view.max) return "";
+    const grade = (Number(to.elevation) - Number(from.elevation)) / Math.max(.001, Number(to.station) - Number(from.station)) * 100;
+    const station = (linearStart + linearEnd) / 2; const elevation = designElevationAt(station);
+    const angle = Math.max(-35, Math.min(35, Math.atan2(y(designElevationAt(linearEnd)) - y(designElevationAt(linearStart)), x(linearEnd) - x(linearStart)) * 180 / Math.PI));
+    const yy = Math.max(25, Math.min(203, y(elevation) - 10));
+    return `<text x="${x(station).toFixed(1)}" y="${yy.toFixed(1)}" text-anchor="middle" transform="rotate(${angle.toFixed(1)} ${x(station).toFixed(1)} ${yy.toFixed(1)})" fill="#d81b16" stroke="#fff" stroke-width="3" paint-order="stroke" font-size="14" font-weight="700">${grade.toFixed(1).replace(".", ",")} %</text>`;
+  }).join("");
+  const pvis = profilePvis.filter((pvi) => Number(pvi.station) >= view.min && Number(pvi.station) <= view.max).map((pvi) => `<circle cx="${x(pvi.station).toFixed(1)}" cy="${y(pvi.elevation).toFixed(1)}" r="4.6" fill="#d400c8" stroke="#fff" stroke-width="1.8"/>`).join("");
+  chart.innerHTML = `${horizontal}${grid.join("")}<path d="${path("terrain")}" fill="none" stroke="#6e5136" stroke-width="2.2"/><path d="${path("design")}" fill="none" stroke="#db00d4" stroke-width="3"/>${grades}${pvis}<text x="58" y="15" fill="#6e5136" font-size="11" font-weight="700">Terreng</text><text x="120" y="15" fill="#b500ad" font-size="11" font-weight="700">Veglinje</text>`;
+  status.textContent = `Pel ${Math.round(view.min)}–${Math.round(view.max)} · mushjul: zoom · venstre dra: panorer`;
+}
+function setFieldRoute(workspace) {
+  const route = workspace?.design?.route || workspace?.route;
+  const rawPoints = Array.isArray(route?.points) ? route.points : [];
+  if (rawPoints.length < 2) { fieldRoute = null; return; }
+  try {
+    const sourceProjection = ensureUtmProjection(route.crs || workspace?.design?.model?.crs || "EPSG:25832");
+    const points = rawPoints.map((point, index) => ({
+      coordinate: ol.proj.transform([Number(point.x), Number(point.y)], sourceProjection, projection),
+      station: Number.isFinite(Number(point.station)) ? Number(point.station) : index
+    })).filter((point) => Number.isFinite(point.coordinate[0]) && Number.isFinite(point.coordinate[1]) && Number.isFinite(point.station));
+    fieldRoute = points.length > 1 ? points : null;
+  } catch (error) { console.warn("Kunne ikke lese veilinjen for grunnforhold", error); fieldRoute = null; }
+}
+function routePointAt(station) {
+  if (!fieldRoute?.length) return null;
+  const start = fieldRoute[0]; const end = fieldRoute[fieldRoute.length - 1];
+  if (station <= start.station) return start.coordinate.slice();
+  if (station >= end.station) return end.coordinate.slice();
+  for (let index = 0; index < fieldRoute.length - 1; index += 1) {
+    const a = fieldRoute[index]; const b = fieldRoute[index + 1];
+    if (station < a.station || station > b.station) continue;
+    const fraction = (station - a.station) / Math.max(.0001, b.station - a.station);
+    return [a.coordinate[0] + (b.coordinate[0] - a.coordinate[0]) * fraction, a.coordinate[1] + (b.coordinate[1] - a.coordinate[1]) * fraction];
+  }
+  return end.coordinate.slice();
+}
+function nearestRouteLocation(coordinate) {
+  if (!fieldRoute?.length || !coordinate) return null;
+  let best = null;
+  for (let index = 0; index < fieldRoute.length - 1; index += 1) {
+    const a = fieldRoute[index]; const b = fieldRoute[index + 1];
+    const dx = b.coordinate[0] - a.coordinate[0]; const dy = b.coordinate[1] - a.coordinate[1];
+    const lengthSquared = dx * dx + dy * dy;
+    const fraction = Math.max(0, Math.min(1, ((coordinate[0] - a.coordinate[0]) * dx + (coordinate[1] - a.coordinate[1]) * dy) / Math.max(.000001, lengthSquared)));
+    const snapped = [a.coordinate[0] + dx * fraction, a.coordinate[1] + dy * fraction];
+    const distanceSquared = (coordinate[0] - snapped[0]) ** 2 + (coordinate[1] - snapped[1]) ** 2;
+    if (!best || distanceSquared < best.distanceSquared) best = { coordinate: snapped, station: a.station + (b.station - a.station) * fraction, distanceSquared };
+  }
+  return best;
+}
+function routeSection(from, to) {
+  if (!fieldRoute?.length) return null;
+  const start = Math.min(from, to); const end = Math.max(from, to);
+  const coordinates = [routePointAt(start), ...fieldRoute.filter((point) => point.station > start && point.station < end).map((point) => point.coordinate.slice()), routePointAt(end)].filter(Boolean);
+  return coordinates.length > 1 ? coordinates : null;
+}
+async function syncFieldProfile({ quiet = true } = {}) {
+  if (!fieldConnection) { fieldProfile = null; fieldRoute = null; renderFieldProfile(); return; }
+  try {
+    const workspace = await fieldServerRequest(`/api/projects/${encodeURIComponent(fieldConnection.projectId)}/workspace`);
+    setFieldRoute(workspace);
+    const profile = workspace?.design?.model?.profile;
+    if (!Array.isArray(profile?.samples) || !profile.samples.length) throw new Error("Vegplanlegger-prosjektet har ingen ferdig profil ennå.");
+    fieldProfile = profile;
+    renderFieldProfile();
+  } catch (error) {
+    fieldProfile = null; renderFieldProfile();
+    if (!quiet) toast(error.message || "Kunne ikke hente vertikalgeometrien.");
+  }
+}
+async function syncVegplanleggerNow() {
+  await syncFieldNotes();
+  await syncFieldMaps();
+  await syncFieldProfile({ quiet: false });
+}
+function replaceFieldData(payload) {
+  drawingSource.clear(); notesSource.clear();
+  readInto(drawingSource, payload?.data?.drawings);
+  readInto(notesSource, payload?.data?.notes);
+  saveData();
+}
+async function connectVegplanlegger() {
+  const serverUrl = normaliseServerUrl($("vegplanlegger-server").value || location.origin);
+  const projectCode = $("vegplanlegger-code").value.trim();
+  if (!projectCode) { toast("Skriv inn prosjektkoden fra Vegplanlegger."); return; }
+  try {
+    $("connect-vegplanlegger").disabled = true;
+    let pendingConnection;
+    const [legacyProjectId, legacyAccessKey] = projectCode.split(".");
+    if (/^[-a-z0-9]{3,}$/i.test(legacyProjectId || "") && /^[a-z0-9]{12,}$/i.test(legacyAccessKey || "")) {
+      pendingConnection = { serverUrl, projectId: legacyProjectId, accessKey: legacyAccessKey, projectCode };
+    } else {
+      const lookup = await fetch(`${serverUrl}/api/project-code/${encodeURIComponent(projectCode)}`);
+      const remoteProject = await lookup.json().catch(() => ({}));
+      if (!lookup.ok) throw new Error(remoteProject.error || "Fant ikke prosjektet.");
+      pendingConnection = { serverUrl, projectId: remoteProject.id, accessKey: remoteProject.accessKey, projectCode: remoteProject.name };
+    }
+    const { projectId, accessKey } = pendingConnection;
+    const response = await fetch(`${serverUrl}/api/projects/${encodeURIComponent(projectId)}/workspace`, { headers: { "X-Project-Key": accessKey } });
+    const workspace = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(workspace.error || "Fant ikke prosjektet.");
+    const remote = await fetch(`${serverUrl}/api/projects/${encodeURIComponent(projectId)}/field-notes`, { headers: { "X-Project-Key": accessKey } });
+    const fieldData = await remote.json().catch(() => ({}));
+    if (!remote.ok) throw new Error(fieldData.error || "Kunne ikke hente befaringnotatene.");
+    const project = createProject(`${workspace.name} – befaring`);
+    projectState.projects.push(project); writeProjects(projectState.projects);
+    switchProject(project.id);
+    fieldConnection = pendingConnection; writeFieldConnection(project.id, fieldConnection);
+    replaceFieldData(fieldData);
+    await syncFieldProfile({ quiet: true });
+    renderProjectPicker();
+    updateFieldSyncUi("Koblet til Vegplanlegger. Notater synkroniseres automatisk.", "ready");
+    toast("Nytt, koblet befaringprosjekt er klart.");
+  } catch (error) {
+    console.error(error);
+    updateFieldSyncUi(error.message || "Kunne ikke koble til Vegplanlegger.", "pending");
+    toast("Kunne ikke koble til. Kontroller adresse, nett og befaringkode.");
+  } finally { $("connect-vegplanlegger").disabled = false; }
+}
+function saveData() { localStorage.setItem(projectDataKey(activeProjectId), JSON.stringify({ drawings: serialise(drawingSource), notes: serialise(notesSource), imports: serialise(importSource) })); countObjects(); scheduleFieldSync(); }
 function loadData() { try { const data = JSON.parse(localStorage.getItem(projectDataKey(activeProjectId))); if (data) { readInto(drawingSource, data.drawings); readInto(notesSource, data.notes); readInto(importSource, data.imports); } } catch { toast("Kunne ikke lese tidligere lokale notater."); } countObjects(); }
 function renderProjectPicker() { const select = $("project-select"); select.replaceChildren(); projectState.projects.forEach((project) => { const option = document.createElement("option"); option.value = project.id; option.textContent = project.name; option.selected = project.id === activeProjectId; select.append(option); }); $("project-name").value = projectState.projects.find((project) => project.id === activeProjectId)?.name || ""; }
 function zoomToProject() { const features = [...drawingSource.getFeatures(), ...notesSource.getFeatures(), ...importSource.getFeatures()]; if (!features.length) return; const extent = ol.extent.createEmpty(); features.forEach((feature) => ol.extent.extend(extent, feature.getGeometry().getExtent())); if (!ol.extent.isEmpty(extent)) map.getView().fit(extent, { padding: [70, 280, 70, 280], maxZoom: 16, duration: 500 }); }
 function switchProject(id) {
   if (id === activeProjectId || !projectState.projects.some((project) => project.id === id)) return;
   saveData(); deactivateTool(); hideDetail(); drawingSource.clear(); notesSource.clear(); importSource.clear(); positionSource.clear();
-  activeProjectId = id; localStorage.setItem(ACTIVE_PROJECT_KEY, id); groupVisibility = JSON.parse(localStorage.getItem(projectVisibilityKey(id)) || "{}");
+  activeProjectId = id; localStorage.setItem(ACTIVE_PROJECT_KEY, id); groupVisibility = JSON.parse(localStorage.getItem(projectVisibilityKey(id)) || "{}"); fieldConnection = readFieldConnection(id);
+  fieldProfile = null; fieldRoute = null; groundSegmentStart = null; fieldProfileView.zoom = 1; fieldProfileView.center = null; renderFieldProfile();
   loadData(); restoreRasterImages(); zoomToProject(); renderProjectPicker(); toast(`Byttet til ${projectState.projects.find((project) => project.id === id).name}.`);
+  updateFieldSyncUi(fieldConnection ? "Koblet til Vegplanlegger. Endringer synkroniseres automatisk." : "Koble til med adressen og befaringkoden fra Vegplanlegger.", fieldConnection ? "ready" : "");
+  if (fieldConnection) syncFieldProfile({ quiet: true });
 }
 function addProject() { const project = createProject("Nytt prosjekt"); projectState.projects.push(project); writeProjects(projectState.projects); switchProject(project.id); const field = $("project-name"); field.focus(); field.select(); toast("Nytt, tomt prosjekt er klart. Skriv inn prosjektnavnet øverst."); }
 function renameProject() { const project = projectState.projects.find((item) => item.id === activeProjectId); const name = $("project-name").value.trim(); if (!project || !name) { renderProjectPicker(); return; } project.name = name; writeProjects(projectState.projects); renderProjectPicker(); }
@@ -230,6 +548,80 @@ quickCulvertDialog.className = "quick-culvert-dialog";
 quickCulvertDialog.hidden = true;
 quickCulvertDialog.innerHTML = '<label for="quick-culvert-text">Stikkrenne <span>diameter (valgfritt)</span></label><input id="quick-culvert-text" type="text" inputmode="text" placeholder="For eksempel Ø 600 mm"><div><button id="cancel-quick-culvert" type="button">Avbryt</button><button id="place-quick-culvert" class="primary" type="button">Plasser</button></div>';
 document.querySelector(".map-area").append(quickCulvertDialog);
+const groundButton = document.createElement("button");
+groundButton.id = "ground-toggle";
+groundButton.className = "ground-toggle-button";
+groundButton.type = "button";
+groundButton.textContent = "Grunnforhold";
+document.querySelector(".map-area").append(groundButton);
+const groundPanel = document.createElement("section");
+groundPanel.id = "ground-panel";
+groundPanel.hidden = true;
+groundPanel.innerHTML = `<div class="ground-panel-head"><strong>Grunnforhold</strong><button id="ground-close" type="button" aria-label="Lukk grunnforhold">×</button></div><div id="ground-groups" class="ground-groups"></div><div class="ground-actions"><button id="ground-manual" class="secondary" type="button">Manuell linje</button><button id="ground-undo" class="secondary" type="button">Angre siste</button></div>`;
+document.body.append(groundPanel);
+
+function latestGroundFeature() { return notesSource.getFeatures().filter((feature) => feature.get("noteType") === "ground").sort((a, b) => String(b.get("createdAt") || "").localeCompare(String(a.get("createdAt") || "")))[0] || null; }
+function currentGroundCoordinate() { return positionSource.getFeatures()[0]?.getGeometry()?.getCoordinates() || map.getView().getCenter(); }
+function updateGroundPanel() {
+  const status = $("ground-status"); if (!status) return;
+  if (!fieldRoute?.length) { status.textContent = "Synkroniser prosjektets veilinje først. Grunnforhold lagres langs denne linjen."; return; }
+  const last = latestGroundFeature();
+  if (groundManualMode) { status.textContent = "Manuell retting: velg gruppe og tegn deretter linjen langs veien."; return; }
+  const from = groundSegmentStart ?? (last ? Number(last.get("stationTo")) : fieldRoute[0].station);
+  const hasGps = Boolean(positionSource.getFeatures()[0]);
+  status.textContent = `Neste strekning starter ved pel ${Math.round(from)}. ${hasGps ? "GPS-posisjonen brukes som sluttpunkt." : "Kartets sentrum brukes som sluttpunkt – bruk gjerne «Min posisjon»."}`;
+}
+function addGroundFeature(group, from, to) {
+  const coordinates = routeSection(from, to);
+  if (!coordinates) { toast("Veilinjen mangler. Synkroniser prosjektet først."); return false; }
+  const stationFrom = Math.min(from, to); const stationTo = Math.max(from, to);
+  notesSource.addFeature(new ol.Feature({ geometry: new ol.geom.LineString(coordinates), id: uid(), noteType: "ground", groundGroup: group.code, title: group.label, body: `Grunnforhold: ${group.label}`, stationFrom, stationTo, createdAt: new Date().toISOString() }));
+  groundSegmentStart = stationTo; saveData(); refreshLayerMenus(); notesSource.changed(); return true;
+}
+function addGroundSegment(group) {
+  if (!fieldRoute?.length) { toast("Synkroniser veilinjen til Notatkart før du registrerer grunnforhold."); return; }
+  const location = nearestRouteLocation(currentGroundCoordinate());
+  if (!location) { toast("Fant ikke nærmeste punkt på veilinjen."); return; }
+  const last = latestGroundFeature(); const from = groundSegmentStart ?? (last ? Number(last.get("stationTo")) : fieldRoute[0].station);
+  if (Math.abs(location.station - from) < 1) { toast("Flytt deg minst én meter videre, eller bruk manuell linje."); return; }
+  if (addGroundFeature(group, from, location.station)) toast(`${group.short} lagret: pel ${Math.round(Math.min(from, location.station))}–${Math.round(Math.max(from, location.station))}.`);
+  updateGroundPanel();
+}
+function activateGroundManualDraw(group) {
+  if (!fieldRoute?.length) { toast("Synkroniser veilinjen først."); return; }
+  groundManualMode = false; groundManualGroup = group; deactivateTool(); toolMode = "ground-manual";
+  drawInteraction = new ol.interaction.Draw({ source: drawingSource, type: "LineString", style: drawPreviewStyle(group.color) });
+  drawInteraction.on("drawend", (event) => {
+    drawingSource.removeFeature(event.feature);
+    const coordinates = event.feature.getGeometry().getCoordinates();
+    const first = nearestRouteLocation(coordinates[0]); const last = nearestRouteLocation(coordinates[coordinates.length - 1]);
+    deactivateTool();
+    if (!first || !last || Math.abs(last.station - first.station) < 1) { toast("Den manuelle linjen må dekke minst én meter av veien."); updateGroundPanel(); return; }
+    if (addGroundFeature(group, first.station, last.station)) toast(`${group.short} er lagret manuelt på veien.`);
+    updateGroundPanel();
+  });
+  map.addInteraction(drawInteraction); toast(`Tegn ${group.short} langs veien, og dobbelttrykk for å avslutte.`);
+}
+function undoGroundSegment() {
+  const latest = latestGroundFeature(); if (!latest) { toast("Ingen grunnforholdsstrekning å angre."); return; }
+  groundSegmentStart = Number(latest.get("stationFrom")); notesSource.removeFeature(latest); saveData(); refreshLayerMenus(); notesSource.changed(); updateGroundPanel(); toast("Siste grunnforholdsstrekning er fjernet.");
+}
+function renderGroundGroups() {
+  const holder = $("ground-groups"); if (!holder) return; holder.replaceChildren();
+  groundGroups.forEach((group) => { const button = document.createElement("button"); button.type = "button"; button.className = "ground-group"; button.style.setProperty("--ground-color", group.color); button.innerHTML = `<b>${group.short}</b><span>${group.label}</span>`; button.addEventListener("click", () => groundManualMode ? activateGroundManualDraw(group) : addGroundSegment(group)); holder.append(button); });
+}
+function setGroundPanelOpen(open) {
+  groundPanel.hidden = !open;
+  if (open) {
+    groundPanel.removeAttribute("hidden");
+    groundPanel.style.cssText = "display:block;position:fixed;z-index:2147483647;top:76px;right:12px;";
+  } else { groundPanel.hidden = true; groundPanel.style.display = "none"; }
+  if (open) { renderGroundGroups(); updateGroundPanel(); }
+}
+groundButton.onclick = () => { const open = groundPanel.hidden || groundPanel.style.display === "none"; setGroundPanelOpen(open); if (open) toast("Velg grunnforhold for siste veistrekning."); };
+$("ground-close").onclick = () => { groundManualMode = false; setGroundPanelOpen(false); updateGroundPanel(); };
+$("ground-manual").addEventListener("click", () => { groundManualMode = true; updateGroundPanel(); });
+$("ground-undo").addEventListener("click", undoGroundSegment);
 function showQuickMainMenu() { quickSymbolMenu.hidden = true; document.querySelectorAll('#quick-menu > button[data-quick]').forEach((button) => { button.hidden = false; }); }
 function showQuickSymbolMenu() { document.querySelectorAll('#quick-menu > button[data-quick]').forEach((button) => { button.hidden = true; }); quickSymbolMenu.hidden = false; }
 function hideQuickMenu() { $("quick-menu").hidden = true; showQuickMainMenu(); }
@@ -336,11 +728,68 @@ $("project-menu-toggle").addEventListener("click", () => { const open = $("proje
 $("switch-project").addEventListener("click", () => { $("project-select").hidden = false; $("switch-project").setAttribute("aria-expanded", "true"); requestAnimationFrame(() => { $("project-select").focus(); $("project-select").click(); }); });
 $("project-select").addEventListener("change", (event) => { switchProject(event.target.value); closeProjectMenu(); });
 $("new-project").addEventListener("click", () => { addProject(); closeProjectMenu(); });
+$("connect-vegplanlegger").addEventListener("click", connectVegplanlegger);
+$("sync-vegplanlegger").addEventListener("click", () => syncVegplanleggerNow());
+function setFieldProfileZoom(nextZoom, anchorFraction = .5) {
+  const samples = fieldProfileSamples(); if (!samples.length) return;
+  const previous = profileViewport(samples); const anchorStation = previous.min + previous.visible * anchorFraction;
+  fieldProfileView.zoom = Math.max(1, Math.min(80, nextZoom));
+  const nextVisible = previous.total / fieldProfileView.zoom;
+  fieldProfileView.center = anchorStation + (.5 - anchorFraction) * nextVisible;
+  renderFieldProfile();
+}
+function installFieldProfileControls() {
+  const panel = $("field-profile-panel"); const heading = $("field-profile-drag"); const chart = $("field-profile-chart"); const toggle = $("field-profile-toggle");
+  if (!panel || !heading || !chart || !toggle) return;
+  $("field-profile-zoom-in").addEventListener("click", () => setFieldProfileZoom(fieldProfileView.zoom * 1.8));
+  $("field-profile-zoom-out").addEventListener("click", () => setFieldProfileZoom(fieldProfileView.zoom / 1.8));
+  $("field-profile-fit").addEventListener("click", () => { fieldProfileView.zoom = 1; fieldProfileView.center = null; renderFieldProfile(); });
+  $("field-profile-minimize").addEventListener("click", () => { panel.hidden = true; toggle.hidden = false; });
+  toggle.addEventListener("click", () => { panel.hidden = false; toggle.hidden = true; renderFieldProfile(); });
+  let windowDrag = null;
+  heading.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || event.target.closest("button")) return;
+    const area = document.querySelector(".map-area"); const bounds = panel.getBoundingClientRect(); const areaBounds = area?.getBoundingClientRect(); if (!areaBounds) return;
+    windowDrag = { x: event.clientX, y: event.clientY, left: bounds.left - areaBounds.left, top: bounds.top - areaBounds.top };
+    panel.style.left = `${windowDrag.left}px`; panel.style.top = `${windowDrag.top}px`; panel.style.right = "auto"; panel.style.bottom = "auto";
+    heading.setPointerCapture(event.pointerId); event.preventDefault();
+  });
+  heading.addEventListener("pointermove", (event) => {
+    if (!windowDrag) return;
+    const areaBounds = document.querySelector(".map-area")?.getBoundingClientRect(); if (!areaBounds) return;
+    const left = Math.max(6, Math.min(areaBounds.width - 120, windowDrag.left + event.clientX - windowDrag.x));
+    const top = Math.max(6, Math.min(areaBounds.height - 60, windowDrag.top + event.clientY - windowDrag.y));
+    panel.style.left = `${Math.round(left)}px`; panel.style.top = `${Math.round(top)}px`;
+  });
+  const stopWindowDrag = () => { windowDrag = null; };
+  heading.addEventListener("pointerup", stopWindowDrag); heading.addEventListener("pointercancel", stopWindowDrag);
+  chart.addEventListener("wheel", (event) => {
+    const bounds = chart.getBoundingClientRect(); const fraction = Math.max(0, Math.min(1, (event.clientX - bounds.left) / Math.max(1, bounds.width)));
+    setFieldProfileZoom(fieldProfileView.zoom * (event.deltaY < 0 ? 1.35 : 1 / 1.35), fraction); event.preventDefault();
+  }, { passive: false });
+  chart.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !fieldProfileSamples().length) return;
+    fieldProfilePan = { x: event.clientX, center: profileViewport(fieldProfileSamples()).min + profileViewport(fieldProfileSamples()).visible / 2, visible: profileViewport(fieldProfileSamples()).visible, width: chart.getBoundingClientRect().width };
+    chart.classList.add("is-panning"); chart.setPointerCapture(event.pointerId); event.preventDefault();
+  });
+  chart.addEventListener("pointermove", (event) => {
+    if (!fieldProfilePan) return;
+    fieldProfileView.center = fieldProfilePan.center - (event.clientX - fieldProfilePan.x) / Math.max(1, fieldProfilePan.width) * fieldProfilePan.visible;
+    renderFieldProfile();
+  });
+  const stopProfilePan = () => { fieldProfilePan = null; chart.classList.remove("is-panning"); };
+  chart.addEventListener("pointerup", stopProfilePan); chart.addEventListener("pointercancel", stopProfilePan);
+}
+installFieldProfileControls();
 document.addEventListener("pointerdown", (event) => { if (event.target instanceof Element && !event.target.closest(".project-controls")) closeProjectMenu(); }, true);
 $("project-name").addEventListener("change", renameProject);
 $("project-name").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } });
 loadData();
 restoreRasterImages();
+updateFieldSyncUi(fieldConnection ? "Koblet til Vegplanlegger. Endringer synkroniseres automatisk." : "Koble til med adressen og befaringkoden fra Vegplanlegger.", fieldConnection ? "ready" : "");
+renderFieldProfile();
+if (fieldConnection) syncFieldProfile({ quiet: true });
+window.addEventListener("online", () => syncFieldNotes({ quiet: true }));
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js"));
 
 // GPS-notater og sporlogger lagres i de samme lokale kartdataene som resten av notatene.
