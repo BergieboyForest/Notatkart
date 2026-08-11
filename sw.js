@@ -1,6 +1,6 @@
-const CACHE = "notatkart-v87";
+const CACHE = "notatkart-v88";
 const FILES = [
-  "./", "./index.html", "./styles.css?v=33", "./app.js?v=87", "./manifest.webmanifest", "./icon.svg",
+  "./", "./index.html", "./styles.css?v=33", "./app.js?v=88", "./manifest.webmanifest", "./icon.svg",
   "./vendor/ol.css", "./vendor/ol.js", "./vendor/proj4.js", "./vendor/shp.js", "./vendor/geotiff.js",
   "./vendor/pdf.min.js", "./vendor/pdf.worker.min.js", "./vendor/jszip.min.js"
 ];

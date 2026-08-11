@@ -9,7 +9,7 @@ const PHOTO_DB = "notatkart-photos";
 const PHOTO_STORE = "photos";
 const projection = "EPSG:3857";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = "87";
+const APP_VERSION = "88";
 const projectMenuVersion = document.createElement("p");
 projectMenuVersion.className = "app-version";
 projectMenuVersion.textContent = `Notatkart versjon ${APP_VERSION}`;
@@ -456,6 +456,11 @@ async function connectVegplanlegger() {
   const serverUrl = normaliseServerUrl($("vegplanlegger-server").value || location.origin);
   const projectCode = $("vegplanlegger-code").value.trim();
   if (!projectCode) { toast("Skriv inn prosjektkoden fra Vegplanlegger."); return; }
+  if (location.protocol === "https:" && serverUrl.startsWith("http:")) {
+    updateFieldSyncUi("Denne sikre offline-utgaven kan ikke koble direkte til PC via vanlig HTTP. Bruk sikkerhetskopi i Filer inntil PC-synkronisering også har HTTPS.", "pending");
+    toast("PC-synkronisering trenger HTTPS. Bruk prosjektkopi foreløpig.");
+    return;
+  }
   try {
     $("connect-vegplanlegger").disabled = true;
     let pendingConnection;
