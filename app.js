@@ -9,7 +9,7 @@ const PHOTO_DB = "notatkart-photos";
 const PHOTO_STORE = "photos";
 const projection = "EPSG:3857";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = "88";
+const APP_VERSION = "89";
 const projectMenuVersion = document.createElement("p");
 projectMenuVersion.className = "app-version";
 projectMenuVersion.textContent = `Notatkart versjon ${APP_VERSION}`;
@@ -78,7 +78,7 @@ async function reserveOfflineStorage() {
   const status = $("offline-status");
   if (!status) return;
   if (!window.isSecureContext) {
-    status.textContent = "Prosjektdata lagres lokalt. Full frakoblet oppstart på iPad krever en fast HTTPS-adresse; lagre derfor også sikkerhetskopien i Filer.";
+    status.textContent = "Prosjektdata lagres lokalt. Bruk https://vegplanlegger.local:8443 for sikker synkronisering på samme nett; behold også sikkerhetskopien i Filer.";
     return;
   }
   try {
