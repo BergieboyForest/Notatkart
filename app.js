@@ -9,7 +9,7 @@ const PHOTO_DB = "notatkart-photos";
 const PHOTO_STORE = "photos";
 const projection = "EPSG:3857";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = "89";
+const APP_VERSION = "90";
 const projectMenuVersion = document.createElement("p");
 projectMenuVersion.className = "app-version";
 projectMenuVersion.textContent = `Notatkart versjon ${APP_VERSION}`;
@@ -223,7 +223,7 @@ function updateFieldSyncUi(message, state = "") {
     $("vegplanlegger-code").value = fieldConnection.projectCode || `${fieldConnection.projectId}.${fieldConnection.accessKey}`;
   } else {
     const lastServer = localStorage.getItem(LAST_SERVER_URL_KEY);
-    if (lastServer) $("vegplanlegger-server").value = lastServer;
+    $("vegplanlegger-server").value = lastServer || (location.protocol === "https:" ? "https://vegplanlegger.local:8443" : location.origin);
   }
 }
 async function fieldServerRequest(path, options = {}) {
@@ -453,7 +453,8 @@ function replaceFieldData(payload) {
   saveData();
 }
 async function connectVegplanlegger() {
-  const serverUrl = normaliseServerUrl($("vegplanlegger-server").value || location.origin);
+  const suggestedServer = location.protocol === "https:" ? "https://vegplanlegger.local:8443" : location.origin;
+  const serverUrl = normaliseServerUrl($("vegplanlegger-server").value || suggestedServer);
   const projectCode = $("vegplanlegger-code").value.trim();
   if (!projectCode) { toast("Skriv inn prosjektkoden fra Vegplanlegger."); return; }
   if (location.protocol === "https:" && serverUrl.startsWith("http:")) {
