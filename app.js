@@ -4,11 +4,12 @@ const VISIBILITY_KEY = "notatkart:layer-visibility:v1";
 const PROJECT_INDEX_KEY = "notatkart:projects:v1";
 const ACTIVE_PROJECT_KEY = "notatkart:active-project:v1";
 const VEGPLANLEGGER_CONNECTION_KEY = "notatkart:vegplanlegger-connection:v1";
+const LAST_SERVER_URL_KEY = "notatkart:last-vegplanlegger-server:v1";
 const PHOTO_DB = "notatkart-photos";
 const PHOTO_STORE = "photos";
 const projection = "EPSG:3857";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = "86";
+const APP_VERSION = "87";
 const projectMenuVersion = document.createElement("p");
 projectMenuVersion.className = "app-version";
 projectMenuVersion.textContent = `Notatkart versjon ${APP_VERSION}`;
@@ -73,6 +74,22 @@ function uid() { return `${Date.now().toString(36)}-${Math.random().toString(36)
 function fieldConnectionKey(id) { return `${VEGPLANLEGGER_CONNECTION_KEY}:project:${id}`; }
 function readFieldConnection(id) { try { return JSON.parse(localStorage.getItem(fieldConnectionKey(id)) || "null"); } catch { return null; } }
 function writeFieldConnection(id, connection) { localStorage.setItem(fieldConnectionKey(id), JSON.stringify(connection)); }
+async function reserveOfflineStorage() {
+  const status = $("offline-status");
+  if (!status) return;
+  if (!window.isSecureContext) {
+    status.textContent = "Prosjektdata lagres lokalt. Full frakoblet oppstart på iPad krever en fast HTTPS-adresse; lagre derfor også sikkerhetskopien i Filer.";
+    return;
+  }
+  try {
+    const persistent = navigator.storage?.persist ? await navigator.storage.persist() : false;
+    status.textContent = persistent
+      ? "Offline-lagring er reservert på denne enheten."
+      : "Lokale data er lagret her. Lagre også en sikkerhetskopi i Filer.";
+  } catch {
+    status.textContent = "Lokale data er lagret her. Lagre også en sikkerhetskopi i Filer.";
+  }
+}
 function toast(message) { const el = $("toast"); el.textContent = message; el.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 3600); }
 const symbolNames = { culvert: "Stikkrenne", landing: "Velteplass", turning: "Snuplass", "arrow-left": "Gul pil venstre", "arrow-right": "Gul pil høyre" };
 const groundGroups = [
@@ -157,6 +174,29 @@ const notesLayer = new ol.layer.Vector({ source: notesSource, style: localFeatur
 const drawingLayer = new ol.layer.Vector({ source: drawingSource, style: localFeatureStyle });
 const positionLayer = new ol.layer.Vector({ source: positionSource, style: new ol.style.Style({ image: new ol.style.Circle({ radius: 8, fill: new ol.style.Fill({ color: "#2877d5" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }) }) }) });
 const map = new ol.Map({ target: "map", layers: [baseLayer, losmasserLayer, marinLeireLayer, skogbruksplanLayer, nokkelbiotoperLayer, kulturminnerLayer, artskartLayer, importLayer, drawingLayer, notesLayer, positionLayer], view: new ol.View({ center: ol.proj.fromLonLat([10.256, 60.168]), zoom: 8, maxZoom: 20 }), controls: ol.control.defaults.defaults({ attribution: false }) });
+const SIMPLE_BASEMAP_CACHE_KEY = "notatkart:simple-basemap-norway:v1";
+async function cacheSimpleNorwayBasemap() {
+  if (!navigator.onLine || localStorage.getItem(SIMPLE_BASEMAP_CACHE_KEY) === "ready") return;
+  try {
+    const source = baseLayer.getSource();
+    const tileGrid = source.getTileGridForProjection(projection);
+    const tileUrl = source.getTileUrlFunction();
+    const norway = ol.proj.transformExtent([4, 57, 32, 72], "EPSG:4326", projection);
+    const urls = [];
+    [6, 7].forEach((zoom) => {
+      const topLeft = tileGrid.getTileCoordForCoordAndZ([norway[0], norway[3]], zoom);
+      const bottomRight = tileGrid.getTileCoordForCoordAndZ([norway[2], norway[1]], zoom);
+      const minX = Math.min(topLeft[1], bottomRight[1]); const maxX = Math.max(topLeft[1], bottomRight[1]);
+      const minY = Math.min(topLeft[2], bottomRight[2]); const maxY = Math.max(topLeft[2], bottomRight[2]);
+      for (let x = minX; x <= maxX; x += 1) for (let y = minY; y <= maxY; y += 1) {
+        const url = tileUrl([zoom, x, y], 1, ol.proj.get(projection)); if (url) urls.push(url);
+      }
+    });
+    for (let index = 0; index < urls.length; index += 8) await Promise.all(urls.slice(index, index + 8).map((url) => fetch(url, { mode: "no-cors", cache: "no-store" })));
+    localStorage.setItem(SIMPLE_BASEMAP_CACHE_KEY, "ready");
+    const status = $("offline-status"); if (status) status.textContent = "Lokal lagring er klar. Et enkelt Norgeskart er også tilgjengelig offline.";
+  } catch (error) { console.warn("Kunne ikke forhåndslagre Norgeskart", error); }
+}
 function niceScaleDistance(metres) { const power = 10 ** Math.floor(Math.log10(Math.max(metres, 1))); return [5, 2, 1].map((step) => step * power).find((distance) => distance <= metres) || power; }
 function updateMapScale() { const view = map.getView(); const resolution = view.getResolution(); if (!resolution) return; const metresPerPixel = ol.proj.getPointResolution(projection, resolution, view.getCenter(), "m"); const distance = niceScaleDistance(metresPerPixel * 92); const width = Math.max(34, Math.min(92, distance / metresPerPixel)); const ratio = Math.round(metresPerPixel * (96 / .0254)); $("scale-ratio").textContent = `1 : ${ratio.toLocaleString("nb-NO")}`; $("scale-distance").textContent = distance >= 1000 ? `${distance / 1000} km` : `${distance} m`; $("scale-bar").style.width = `${width}px`; }
 map.getView().on("change:resolution", updateMapScale); map.getView().on("change:center", updateMapScale); map.once("rendercomplete", updateMapScale);
@@ -181,6 +221,9 @@ function updateFieldSyncUi(message, state = "") {
   if (fieldConnection) {
     $("vegplanlegger-server").value = fieldConnection.serverUrl;
     $("vegplanlegger-code").value = fieldConnection.projectCode || `${fieldConnection.projectId}.${fieldConnection.accessKey}`;
+  } else {
+    const lastServer = localStorage.getItem(LAST_SERVER_URL_KEY);
+    if (lastServer) $("vegplanlegger-server").value = lastServer;
   }
 }
 async function fieldServerRequest(path, options = {}) {
@@ -400,6 +443,8 @@ async function syncVegplanleggerNow() {
   await syncFieldNotes();
   await syncFieldMaps();
   await syncFieldProfile({ quiet: false });
+  await exportProject({ backup: true });
+  await reserveOfflineStorage();
 }
 function replaceFieldData(payload) {
   drawingSource.clear(); notesSource.clear();
@@ -430,15 +475,21 @@ async function connectVegplanlegger() {
     const remote = await fetch(`${serverUrl}/api/projects/${encodeURIComponent(projectId)}/field-notes`, { headers: { "X-Project-Key": accessKey } });
     const fieldData = await remote.json().catch(() => ({}));
     if (!remote.ok) throw new Error(fieldData.error || "Kunne ikke hente befaringnotatene.");
-    const project = createProject(`${workspace.name} – befaring`);
-    projectState.projects.push(project); writeProjects(projectState.projects);
+    localStorage.setItem(LAST_SERVER_URL_KEY, serverUrl);
+    let project = projectState.projects.find((item) => readFieldConnection(item.id)?.projectId === projectId);
+    if (!project) {
+      project = createProject(`${workspace.name} – befaring`);
+      projectState.projects.push(project); writeProjects(projectState.projects);
+    }
     switchProject(project.id);
     fieldConnection = pendingConnection; writeFieldConnection(project.id, fieldConnection);
     replaceFieldData(fieldData);
+    await syncFieldMaps({ quiet: true });
     await syncFieldProfile({ quiet: true });
+    await reserveOfflineStorage();
     renderProjectPicker();
-    updateFieldSyncUi("Koblet til Vegplanlegger. Notater synkroniseres automatisk.", "ready");
-    toast("Nytt, koblet befaringprosjekt er klart.");
+    updateFieldSyncUi("Koblet til Vegplanlegger. Kart og notater er lagret lokalt på enheten.", "ready");
+    toast("Befaringprosjektet er klart offline.");
   } catch (error) {
     console.error(error);
     updateFieldSyncUi(error.message || "Kunne ikke koble til Vegplanlegger.", "pending");
@@ -465,8 +516,34 @@ async function savePhoto(id, blob) { const db = await photoDatabase(); return ne
 async function getPhoto(id) { const db = await photoDatabase(); return new Promise((resolve, reject) => { const request = db.transaction(PHOTO_STORE).objectStore(PHOTO_STORE).get(id); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); }
 async function deletePhoto(id) { const db = await photoDatabase(); return new Promise((resolve, reject) => { const tx = db.transaction(PHOTO_STORE, "readwrite"); tx.objectStore(PHOTO_STORE).delete(id); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); }); }
 function projectFileName(name) { return (name || "notatkart-prosjekt").replace(/[^a-z0-9æøå_-]+/gi, "-").replace(/^-|-$/g, "") || "notatkart-prosjekt"; }
-async function exportProject() { try { saveData(); const project = projectState.projects.find((item) => item.id === activeProjectId); const data = JSON.parse(localStorage.getItem(projectDataKey(activeProjectId))); const photoIds = new Set([...notesSource.getFeatures(), ...importSource.getFeatures()].map((feature) => feature.get("photoId") || feature.get("rasterId")).filter(Boolean)); const zip = new JSZip(); zip.file("project.json", JSON.stringify({ version: 1, project: { name: project?.name || "Prosjekt" }, data }, null, 2)); await Promise.all([...photoIds].map(async (id) => { const blob = await getPhoto(id); if (blob) zip.file(`media/${id}`, blob); })); download(await zip.generateAsync({ type: "blob" }), `${projectFileName(project?.name)}.notatkart`); toast("Prosjektpakken er lastet ned."); } catch (error) { console.error(error); toast("Kunne ikke eksportere prosjektet."); } }
-async function importProject(file) { try { const zip = await JSZip.loadAsync(file); const manifestFile = zip.file("project.json"); if (!manifestFile) throw new Error("Dette er ikke en Notatkart-prosjektpakke."); const manifest = JSON.parse(await manifestFile.async("string")); if (!manifest?.data) throw new Error("Prosjektpakken mangler prosjektdata."); const project = createProject(`${manifest.project?.name || "Importert prosjekt"} (importert)`); projectState.projects.push(project); writeProjects(projectState.projects); localStorage.setItem(projectDataKey(project.id), JSON.stringify(manifest.data)); const media = Object.keys(zip.files).filter((name) => name.startsWith("media/") && !zip.files[name].dir); await Promise.all(media.map(async (name) => savePhoto(name.slice(6), await zip.file(name).async("blob")))); switchProject(project.id); toast("Prosjektet er importert."); } catch (error) { console.error(error); toast(error.message || "Kunne ikke importere prosjektet."); } }
+async function exportProject({ backup = false } = {}) {
+  try {
+    saveData();
+    const project = projectState.projects.find((item) => item.id === activeProjectId);
+    const data = JSON.parse(localStorage.getItem(projectDataKey(activeProjectId)));
+    const photoIds = new Set([...notesSource.getFeatures(), ...importSource.getFeatures()].map((feature) => feature.get("photoId") || feature.get("rasterId")).filter(Boolean));
+    const zip = new JSZip();
+    zip.file("project.json", JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), project: { name: project?.name || "Prosjekt" }, connection: fieldConnection, data }, null, 2));
+    await Promise.all([...photoIds].map(async (id) => { const blob = await getPhoto(id); if (blob) zip.file(`media/${id}`, blob); }));
+    download(await zip.generateAsync({ type: "blob" }), `${projectFileName(project?.name)}${backup ? "-sikkerhetskopi" : ""}.notatkart`);
+    toast(backup ? "Sikkerhetskopien er lastet ned. Velg «Lagre i Filer» på iPad." : "Prosjektpakken er lastet ned.");
+  } catch (error) { console.error(error); toast("Kunne ikke eksportere prosjektet."); }
+}
+async function importProject(file) {
+  try {
+    const zip = await JSZip.loadAsync(file); const manifestFile = zip.file("project.json");
+    if (!manifestFile) throw new Error("Dette er ikke en Notatkart-prosjektpakke.");
+    const manifest = JSON.parse(await manifestFile.async("string"));
+    if (!manifest?.data) throw new Error("Prosjektpakken mangler prosjektdata.");
+    const project = createProject(`${manifest.project?.name || "Importert prosjekt"} (importert)`);
+    projectState.projects.push(project); writeProjects(projectState.projects);
+    localStorage.setItem(projectDataKey(project.id), JSON.stringify(manifest.data));
+    if (manifest.connection?.projectId && manifest.connection?.accessKey) writeFieldConnection(project.id, manifest.connection);
+    const media = Object.keys(zip.files).filter((name) => name.startsWith("media/") && !zip.files[name].dir);
+    await Promise.all(media.map(async (name) => savePhoto(name.slice(6), await zip.file(name).async("blob"))));
+    switchProject(project.id); await reserveOfflineStorage(); toast("Prosjektet er importert.");
+  } catch (error) { console.error(error); toast(error.message || "Kunne ikke importere prosjektet."); }
+}
 function rasterImage(blob) { return new Promise((resolve, reject) => { const url = URL.createObjectURL(blob); const image = new Image(); image.onload = () => { URL.revokeObjectURL(url); resolve(image); }; image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Kunne ikke lese JPEG-bildet")); }; image.src = url; }); }
 async function restoreRasterImages() { const rasters = importSource.getFeatures().filter((feature) => feature.get("importType") === "raster" && feature.get("rasterId")); await Promise.all(rasters.map(async (feature) => { try { const blob = await getPhoto(feature.get("rasterId")); if (blob) feature.set("image", await rasterImage(blob)); } catch { /* Kartpakken vises som ramme dersom den lokale bildefilen mangler. */ } })); importSource.changed(); }
 function projectionFromPrj(prjText) { const zone = prjText.match(/UTM[_ ]Zone[_ ](\d{1,2})N/i)?.[1]; if (!zone) throw new Error("Finner ikke UTM-sone i PRJ-filen."); const epsg = /WGS[_ ]?1984|WGS 84/i.test(prjText) ? `EPSG:326${zone.padStart(2, "0")}` : `EPSG:258${zone.padStart(2, "0")}`; if (!ol.proj.get(epsg)) { const definition = epsg.startsWith("EPSG:326") ? `+proj=utm +zone=${Number(zone)} +datum=WGS84 +units=m +no_defs` : `+proj=utm +zone=${Number(zone)} +ellps=GRS80 +units=m +no_defs`; proj4.defs(epsg, definition); ol.proj.proj4.register(proj4); } return epsg; }
@@ -517,7 +594,7 @@ async function importGeoTiffFile(file) {
 }
 function geoPdfCoordinates(arrayBuffer) { const raw = new TextDecoder("latin1").decode(arrayBuffer); const match = /\/GPTS\s*\[([^\]]+)\]/s.exec(raw); if (!match) throw new Error("Fant ikke standard GeoPDF-koordinater. Eksporter som GeoTIFF eller legg ved JGW/PRJ."); const values = match[1].match(/[+-]?(?:\d+\.?\d*|\.\d+)(?:[Ee][+-]?\d+)?/g)?.map(Number) || []; if (values.length < 8) throw new Error("GeoPDF-koordinatene er ufullstendige."); const coordinates = []; for (let index = 0; index + 1 < values.length && coordinates.length < 4; index += 2) coordinates.push(ol.proj.fromLonLat([values[index + 1], values[index]])); if (coordinates.length !== 4) throw new Error("GeoPDF-en må inneholde fire hjørnekoordinater."); return coordinates; }
 async function importGeoPdfFile(file) {
-  if (!pdfjsLib?.getDocument) throw new Error("GeoPDF-støtten er ikke lastet. Prøv igjen med internettforbindelse."); const arrayBuffer = await file.arrayBuffer(); const coordinates = geoPdfCoordinates(arrayBuffer); pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise; const page = await pdf.getPage(1); const initialViewport = page.getViewport({ scale: 1 }); const scale = Math.min(2, 2048 / Math.max(initialViewport.width, initialViewport.height)); const viewport = page.getViewport({ scale }); const canvas = document.createElement("canvas"); canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height); await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise; return importRasterCanvas(file, canvas, coordinates, "GeoPDF (første side)");
+  if (!pdfjsLib?.getDocument) throw new Error("GeoPDF-støtten er ikke lastet."); const arrayBuffer = await file.arrayBuffer(); const coordinates = geoPdfCoordinates(arrayBuffer); pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdf.worker.min.js"; const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise; const page = await pdf.getPage(1); const initialViewport = page.getViewport({ scale: 1 }); const scale = Math.min(2, 2048 / Math.max(initialViewport.width, initialViewport.height)); const viewport = page.getViewport({ scale }); const canvas = document.createElement("canvas"); canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height); await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise; return importRasterCanvas(file, canvas, coordinates, "GeoPDF (første side)");
 }
 function worldCorners(values, width, height, dataProjection) { const [a, d, b, e, c, f] = values; const coordinate = (column, row) => ol.proj.transform([a * column + b * row + c, d * column + e * row + f], dataProjection, projection); return [coordinate(-0.5, -0.5), coordinate(width - 0.5, -0.5), coordinate(width - 0.5, height - 0.5), coordinate(-0.5, height - 0.5), coordinate(-0.5, -0.5)]; }
 function deactivateTool() { if (drawInteraction) { map.removeInteraction(drawInteraction); drawInteraction = null; } if (modifyInteraction) { map.removeInteraction(modifyInteraction); modifyInteraction = null; } toolMode = null; document.querySelectorAll("[data-draw]").forEach((button) => button.classList.remove("active")); $("map").style.cursor = ""; }
@@ -730,6 +807,7 @@ $("project-select").addEventListener("change", (event) => { switchProject(event.
 $("new-project").addEventListener("click", () => { addProject(); closeProjectMenu(); });
 $("connect-vegplanlegger").addEventListener("click", connectVegplanlegger);
 $("sync-vegplanlegger").addEventListener("click", () => syncVegplanleggerNow());
+$("backup-project").addEventListener("click", () => exportProject({ backup: true }));
 function setFieldProfileZoom(nextZoom, anchorFraction = .5) {
   const samples = fieldProfileSamples(); if (!samples.length) return;
   const previous = profileViewport(samples); const anchorStation = previous.min + previous.visible * anchorFraction;
@@ -786,11 +864,14 @@ $("project-name").addEventListener("change", renameProject);
 $("project-name").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } });
 loadData();
 restoreRasterImages();
+reserveOfflineStorage();
 updateFieldSyncUi(fieldConnection ? "Koblet til Vegplanlegger. Endringer synkroniseres automatisk." : "Koble til med adressen og befaringkoden fra Vegplanlegger.", fieldConnection ? "ready" : "");
 renderFieldProfile();
 if (fieldConnection) syncFieldProfile({ quiet: true });
 window.addEventListener("online", () => syncFieldNotes({ quiet: true }));
-if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js"));
+if ("serviceWorker" in navigator) window.addEventListener("load", () => {
+  navigator.serviceWorker.register("sw.js").then(() => navigator.serviceWorker.ready).then(cacheSimpleNorwayBasemap).catch((error) => console.warn("Kunne ikke starte offline-støtte", error));
+});
 
 // GPS-notater og sporlogger lagres i de samme lokale kartdataene som resten av notatene.
 function refreshLayerMenus() {

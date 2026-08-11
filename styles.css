@@ -30,6 +30,7 @@ button,.file-button { appearance:none; border:1px solid #b9c8bd; border-radius:9
 .detail-card.compact-note-editor #text-editor select { grid-column:1 / -1; margin:0; }
 #track-direct.primary { color:#fff; background:#1e4d3a; border-color:#1e4d3a; }
 .project-menu #project-import-content { margin-top:2px; }.project-menu .file-button,.top-dropdown #export-project { width:100%; margin:0; text-align:center; }.top-dropdown #export-button { width:100%; margin:0 0 7px; text-align:left; }
+.offline-status { margin:3px 2px 0; font-size:11px; line-height:1.35; color:#587062; }
 .vegplanlegger-connect { display:grid; gap:5px; margin:3px 0 5px; padding:9px; border-top:1px solid #dce6da; border-bottom:1px solid #dce6da; background:#f3f8f2; }
 .vegplanlegger-connect strong { color:#315746; font-size:12px; }
 .vegplanlegger-connect label { margin:2px 0 0; color:#52685d; font-size:10px; font-weight:800; }
